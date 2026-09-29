@@ -402,7 +402,7 @@ async function main() {
       const right = new Vector3(forward.z, 0, -forward.x);
       const dir = forward.scale(fz).add(right.scale(fx)).normalize();
       const inWater = Math.abs(pos.z - riverCenter(pos.x)) < 4;
-      const speed = (keys.has('ShiftLeft') ? 13 : 7.5) * (inWater ? 0.55 : 1);
+      const speed = (keys.has('ShiftLeft') ? 22 : 12) * (inWater ? 0.6 : 1);
       const step = speed * dt;
       const tryMove = (dx: number, dz: number) => {
         const nx = pos.x + dx;
@@ -421,7 +421,7 @@ async function main() {
       let diff = target - heading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       heading += diff * Math.min(1, dt * 12);
-      hopT += dt * (keys.has('ShiftLeft') ? 15 : 11);
+      hopT += dt * (keys.has('ShiftLeft') ? 19 : 14);
     } else {
       hopT = 0;
     }
