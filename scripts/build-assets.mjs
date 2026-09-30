@@ -151,7 +151,8 @@ await sharp(groundTex)
   .resize(1024, 1024, { fit: 'fill' })
   .greyscale()
   .normalise()
-  .linear(0.35, 166)
+  .blur(1.2)
+  .linear(0.16, 214)
   .webp({ quality: 85 })
   .toFile(path.join(texOut, 'detail.webp'));
 console.log('detail texture written');

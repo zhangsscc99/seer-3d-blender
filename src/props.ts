@@ -1,17 +1,16 @@
 import {
   AbstractMesh,
   AssetContainer,
+  Color3,
   LoadAssetContainerAsync,
+  PBRMaterial,
   Scene,
   TransformNode,
   Vector3,
 } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 
-export type PropName =
-  | 'cloud_flower' | 'cloud_blue_small' | 'grass' | 'amberleaf_sentinel' | 'amethyst_tendril'
-  | 'cotton_candy_pig' | 'emerald_canopy' | 'gold_bar' | 'gold_pile' | 'stone_wall'
-  | 'stump' | 'verdant_tendrils' | 'whispered_petals';
+export type PropName = string;
 
 interface Proto {
   container: AssetContainer;
@@ -22,9 +21,20 @@ interface Proto {
 
 const protos = new Map<PropName, Proto>();
 
-export async function loadProp(scene: Scene, name: PropName) {
+export interface LoadOptions {
+  emissive?: number;
+}
+
+export async function loadProp(scene: Scene, name: PropName, opts: LoadOptions = {}) {
   const container = await LoadAssetContainerAsync(`/models/${name}.glb`, scene);
   for (const m of container.meshes) m.receiveShadows = true;
+  if (opts.emissive) {
+    for (const mat of container.materials) {
+      if (!(mat instanceof PBRMaterial)) continue;
+      mat.emissiveTexture = mat.albedoTexture;
+      mat.emissiveColor = new Color3(opts.emissive, opts.emissive, opts.emissive);
+    }
+  }
   protos.set(name, { container, size: Vector3.Zero(), offset: Vector3.Zero(), count: 0 });
 }
 
@@ -40,7 +50,7 @@ export function spawn(
   name: PropName,
   pos: Vector3,
   opts: SpawnOptions = {},
-): { node: TransformNode; meshes: AbstractMesh[] } {
+): { node: TransformNode; meshes: AbstractMesh[]; height: number } {
   const proto = protos.get(name);
   if (!proto) throw new Error(`prop not loaded: ${name}`);
   const wrapper = new TransformNode(`${name}_${proto.count}`, scene);
@@ -67,5 +77,5 @@ export function spawn(
   wrapper.rotation.y = opts.rotY ?? 0;
 
   const meshes = root.getChildMeshes(false);
-  return { node: wrapper, meshes };
+  return { node: wrapper, meshes, height: proto.size.y * s };
 }

@@ -26,6 +26,7 @@ import {
   createTerrain,
   heightAt,
   pitDistance,
+  PIT_DEPTH,
   riverCenter,
   waterLevel,
 } from './terrain';
@@ -133,44 +134,6 @@ function createRiver() {
   return w;
 }
 
-function createPortal(x: number, z: number) {
-  const y = heightAt(x, z);
-  const root = new TransformNode('portal', scene);
-  root.position.set(x, y + 0.15, z);
-  const base = MeshBuilder.CreateCylinder('portalBase', { diameter: 7, height: 0.3, tessellation: 48 }, scene);
-  const bm = new PBRMaterial('portalBaseMat', scene);
-  bm.albedoColor = new Color3(0.62, 0.66, 0.72);
-  bm.metallic = 0.9;
-  bm.roughness = 0.35;
-  base.material = bm;
-  base.parent = root;
-  base.position.y = 0.15;
-  const ring = MeshBuilder.CreateTorus('portalRing', { diameter: 6.2, thickness: 0.35, tessellation: 64 }, scene);
-  ring.material = bm;
-  ring.parent = root;
-  ring.position.y = 0.4;
-  const disc = MeshBuilder.CreateDisc('portalDisc', { radius: 2.9, tessellation: 64 }, scene);
-  const dm = new PBRMaterial('portalDiscMat', scene);
-  dm.albedoColor = new Color3(0.4, 0.85, 1);
-  dm.emissiveColor = new Color3(0.35, 0.85, 1.3);
-  dm.alpha = 0.85;
-  dm.disableLighting = true;
-  disc.material = dm;
-  disc.parent = root;
-  disc.rotation.x = Math.PI / 2;
-  disc.position.y = 0.42;
-  const light = new PointLight('portalLight', new Vector3(x, y + 2.5, z), scene);
-  light.diffuse = new Color3(0.4, 0.85, 1);
-  light.intensity = 12;
-  light.range = 22;
-  scene.onBeforeRenderObservable.add(() => {
-    const t = performance.now() * 0.002;
-    dm.emissiveColor = new Color3(0.3, 0.75 + Math.sin(t) * 0.1, 1.2 + Math.sin(t * 1.3) * 0.2);
-    light.intensity = 11 + Math.sin(t * 1.7) * 2;
-  });
-  return { root, meshes: [base, ring] };
-}
-
 const hud = document.getElementById('hud') as HTMLElement;
 const setStatus = (t: string) => (hud.textContent = t);
 
@@ -197,12 +160,12 @@ async function main() {
   const terrain = await createTerrain(scene);
   createRiver();
 
-  const names: PropName[] = [
-    'cloud_flower', 'cloud_blue_small', 'grass', 'amberleaf_sentinel', 'amethyst_tendril',
-    'cotton_candy_pig', 'emerald_canopy', 'gold_bar', 'gold_pile', 'stone_wall',
-    'stump', 'verdant_tendrils', 'whispered_petals',
-  ];
-  await Promise.all(names.map((n) => loadProp(scene, n)));
+  const hy: Record<string, { emissive?: number }> = {
+    pink_mound: {}, pink_root: {}, maneater: {}, crystal: { emissive: 0.9 }, lantern: { emissive: 0.35 },
+    portal: { emissive: 0.4 }, worm: {}, vine: {}, cliff: {}, rock: {}, tree: {}, bush: {},
+    grass: {}, blue_flower: { emissive: 0.3 }, mountain: {}, robot: {},
+  };
+  await Promise.all(Object.entries(hy).map(([n, o]) => loadProp(scene, `hy/${n}`, o)));
 
   const casters: Mesh[] = [];
   const place = (
@@ -213,13 +176,17 @@ async function main() {
     lift = 0,
   ) => {
     const y = heightAt(x, z) + lift;
-    const r = spawn(scene, name, new Vector3(x, y, z), { rotY: rnd() * Math.PI * 2, ...opts });
-    for (const m of r.meshes) casters.push(m as Mesh);
+    const r = spawn(scene, `hy/${name}`, new Vector3(x, y, z), { rotY: rnd() * Math.PI * 2, ...opts });
+    if (castShadows) for (const m of r.meshes) casters.push(m as Mesh);
     return r;
   };
+  let castShadows = true;
 
   const onLand = (x: number, z: number) =>
-    pitDistance(x, z) > 1.12 && Math.abs(z - riverCenter(x)) > 5.5 && Math.hypot(x, z - 5) < 78;
+    pitDistance(x, z) > 1.1 &&
+    Math.abs(z - riverCenter(x)) > 5.5 &&
+    Math.hypot(x, z - 5) < 76 &&
+    Math.hypot(x - 38, z + 2) > 7;
 
   const scatter = (
     name: PropName,
@@ -239,75 +206,104 @@ async function main() {
     }
   };
 
-  // 右侧草地高台
-  scatter('emerald_canopy', 8, [26, 70, -20, 22], [5, 8]);
-  scatter('amberleaf_sentinel', 6, [28, 70, -20, 24], [4.5, 7]);
-  scatter('grass', 70, [22, 72, -22, 26], [1.4, 2.6], 'width');
-  scatter('cloud_blue_small', 26, [22, 72, -22, 26], [1.4, 2.4], 'width');
-  scatter('cloud_flower', 22, [22, 72, -22, 26], [1.0, 1.9]);
-  scatter('stump', 5, [24, 60, -18, 22], [1.6, 2.6]);
+  const glowLights: PointLight[] = [];
+  const glowBase: number[] = [];
+  const glow = (x: number, y: number, z: number, color: Color3, intensity: number, rangeM: number) => {
+    const l = new PointLight(`glow${glowLights.length}`, new Vector3(x, y, z), scene);
+    l.diffuse = color;
+    l.intensity = intensity;
+    l.range = rangeM;
+    glowLights.push(l);
+    glowBase.push(intensity);
+    return l;
+  };
 
-  // 左侧粉色岩丘
-  scatter('whispered_petals', 20, [-72, -20, -22, 26], [1.6, 3.2]);
-  scatter('verdant_tendrils', 16, [-72, -20, -22, 26], [2.2, 4.4]);
-  scatter('amethyst_tendril', 12, [-70, -22, -20, 26], [3, 6]);
-  scatter('stone_wall', 8, [-70, -24, -20, 24], [3, 6], 'width');
-  scatter('cloud_blue_small', 10, [-70, -22, -20, 24], [1.2, 2.2], 'width');
+  // 左侧粉色岩丘：肉质岩丘 + 蓝莓、触手根须、灯笼草
+  const mounds: [number, number, number][] = [[-44, 4, 9], [-36, 14, 7], [-50, 18, 8], [-40, -10, 7.5], [-56, -4, 9]];
+  for (const [x, z, w] of mounds) place('pink_mound', x, z, { width: w });
+  for (let i = 0; i < 9; i++) {
+    const a = rnd() * Math.PI * 2;
+    const [mx, mz] = mounds[i % mounds.length];
+    place('pink_root', mx + Math.cos(a) * 6, mz + Math.sin(a) * 6, { width: range(7, 11), rotY: a + Math.PI });
+  }
+  scatter('pink_root', 6, [-66, -32, -22, 24], [6, 10], 'width');
+  const lanterns: [number, number][] = [[-33, 2], [-47, -14], [-30, 18]];
+  for (const [x, z] of lanterns) {
+    const r = place('lantern', x, z, { height: range(2.6, 3.4) });
+    glow(x, heightAt(x, z) + r.height * 0.85, z, new Color3(1, 0.9, 0.4), 5, 9);
+  }
+  scatter('blue_flower', 18, [-70, -30, -22, 24], [1.2, 2]);
+  scatter('rock', 6, [-70, -30, -24, 24], [2.5, 4], 'width');
+  scatter('grass', 14, [-66, -32, -22, 24], [1.2, 1.8], 'width');
+
+  // 右侧绿色草地：传送台、食人花、盘绕藤蔓、树与灌木
+  const portalPos = new Vector3(38, 0, -2);
+  const portal = place('portal', portalPos.x, portalPos.z, { width: 8, rotY: 0 });
+  glow(portalPos.x, heightAt(portalPos.x, portalPos.z) + 2.5, portalPos.z, new Color3(0.4, 0.85, 1), 12, 20);
+  void portal;
+  place('maneater', 30, 12, { height: 3.2, rotY: -Math.PI * 0.75 });
+  place('maneater', 36, 15, { height: 2.8, rotY: -Math.PI * 0.6 });
+  const vines: [number, number][] = [[50, 20], [56, 14], [46, 24], [60, 22]];
+  for (const [x, z] of vines) place('vine', x, z, { height: range(5, 7) });
+  scatter('tree', 7, [40, 72, -26, 26], [7, 10]);
+  scatter('bush', 14, [26, 70, -24, 26], [2.4, 3.8], 'width');
+  scatter('grass', 60, [24, 72, -24, 26], [1.2, 2], 'width');
+  scatter('blue_flower', 10, [26, 70, -22, 24], [1.2, 1.8]);
+  scatter('rock', 5, [28, 70, -24, 24], [2.5, 4], 'width');
+
+  // 凹坑：分层崖壁环绕，坑底岩石，崖壁探出的粉色虫子
+  castShadows = false;
+  for (let i = 0; i < 34; i++) {
+    const a = (i / 34) * Math.PI * 2;
+    const d = 0.8;
+    const x = Math.cos(a) * 30 * d;
+    const z = Math.sin(a) * 21 * d;
+    if (Math.abs(z - riverCenter(x)) < 7) continue;
+    place('cliff', x, z, { height: PIT_DEPTH * range(0.75, 0.95), rotY: -a + Math.PI / 2 }, -PIT_DEPTH - heightAt(x, z));
+  }
+  castShadows = true;
+  for (let i = 0; i < 7; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = range(0.2, 0.6);
+    place('rock', Math.cos(a) * 30 * d, Math.sin(a) * 21 * d, { width: range(1.8, 3.2) });
+  }
+  const wormA = Math.PI * 0.42;
+  place('worm', Math.cos(wormA) * 30 * 0.8, Math.sin(wormA) * 21 * 0.8, { height: 3.5, rotY: -wormA - Math.PI / 2 });
+
+  // 河中发光水晶
+  const crystals: [number, number, number][] = [[4, 0, 3.6], [8, 1.5, 2.6], [6.5, -1.4, 2.2], [-20, 0.6, 3.2], [-24, -1, 2.4]];
+  for (const [cx, off, h] of crystals) {
+    const cz = riverCenter(cx) + off;
+    place('crystal', cx, cz, { height: h }, -0.3);
+    glow(cx, waterLevel() + 2.4, cz, new Color3(1, 0.88, 0.4), 8, 15);
+  }
 
   // 河对岸
-  scatter('emerald_canopy', 9, [-60, 60, 40, 72], [5, 9]);
-  scatter('amberleaf_sentinel', 6, [-60, 60, 40, 72], [4.5, 7.5]);
-  scatter('grass', 50, [-60, 60, 38, 72], [1.4, 2.6], 'width');
-  scatter('cloud_flower', 18, [-60, 60, 38, 72], [1.0, 1.9]);
-  scatter('amethyst_tendril', 8, [-60, 60, 40, 72], [3, 6]);
+  scatter('tree', 10, [-64, 64, 40, 72], [7, 11]);
+  scatter('bush', 16, [-64, 64, 38, 72], [2.4, 4], 'width');
+  scatter('grass', 40, [-64, 64, 38, 72], [1.2, 2], 'width');
+  scatter('pink_mound', 3, [-60, -20, 42, 70], [6, 9], 'width');
+  scatter('maneater', 3, [0, 50, 40, 66], [2.6, 3.2]);
 
-  // 靠近后方
-  scatter('grass', 24, [-60, 60, -60, -24], [1.4, 2.4], 'width');
-  scatter('stone_wall', 8, [-65, 65, -70, -26], [3, 6], 'width');
-  scatter('stump', 3, [-40, 40, -60, -28], [1.6, 2.6]);
+  // 靠近镜头的南侧
+  scatter('grass', 26, [-64, 64, -66, -26], [1.2, 2], 'width');
+  scatter('rock', 8, [-66, 66, -70, -28], [3, 5], 'width');
+  scatter('bush', 8, [-60, 60, -66, -28], [2.4, 3.6], 'width');
 
-  // 凹坑边缘岩石
-  for (let i = 0; i < 26; i++) {
-    const a = (i / 26) * Math.PI * 2 + rnd() * 0.2;
-    const d = 1.16 + rnd() * 0.05;
-    const x = Math.cos(a) * 24 * d;
-    const z = 2 + Math.sin(a) * 19 * d;
-    if (Math.abs(z - riverCenter(x)) < 6) continue;
-    place('stone_wall', x, z, { width: range(3, 5.5) });
+  // 远景山峰
+  castShadows = false;
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + rnd() * 0.15;
+    const r = range(96, 110);
+    const x = Math.cos(a) * r;
+    const z = 5 + Math.sin(a) * r;
+    place('mountain', x, z, { height: range(40, 60), rotY: rnd() * Math.PI * 2 }, -4);
   }
-
-  // 坑底
-  for (let i = 0; i < 6; i++) {
-    const a = rnd() * Math.PI * 2;
-    const d = range(0.35, 0.8);
-    place('gold_pile', Math.cos(a) * 24 * d, 2 + Math.sin(a) * 19 * d, { width: range(1.6, 2.6) });
-  }
-  for (let i = 0; i < 8; i++) {
-    const a = rnd() * Math.PI * 2;
-    const d = range(0.5, 0.85);
-    place('stone_wall', Math.cos(a) * 24 * d, 2 + Math.sin(a) * 19 * d, { width: range(1.6, 3) });
-  }
-
-  // 河中发光金矿
-  const glowLights: PointLight[] = [];
-  const gold: [number, number][] = [[6, 0], [10, 1.4], [8, -1.6], [-22, 0.5], [-26, -1]];
-  for (const [gx, off] of gold) {
-    const gz = riverCenter(gx) + off;
-    place('gold_bar', gx, gz, { width: range(3.2, 4.4) }, 0);
-    place('gold_pile', gx + 2.2, gz + 0.8, { width: range(2.2, 3) }, 0);
-    const l = new PointLight(`gold${gx}`, new Vector3(gx, waterLevel() + 2.2, gz), scene);
-    l.diffuse = new Color3(1, 0.85, 0.35);
-    l.intensity = 9;
-    l.range = 16;
-    glowLights.push(l);
-  }
-
-  const portal = createPortal(34, -4);
-  for (const m of portal.meshes) casters.push(m as Mesh);
+  castShadows = true;
 
   // 玩家
-  const player = place('cotton_candy_pig', 0, 9, { height: 1.5 });
-  const cam = new ArcRotateCamera('cam', -Math.PI / 2, 1.0, 15, new Vector3(0, 1, 9), scene);
+  const player = place('robot', 30, -12, { height: 1.9, rotY: 0 });
+  const cam = new ArcRotateCamera('cam', -Math.PI / 2, 1.05, 16, new Vector3(30, 1, -12), scene);
   cam.lowerRadiusLimit = 5;
   cam.upperRadiusLimit = 32;
   cam.lowerBetaLimit = 0.35;
@@ -451,7 +447,7 @@ async function main() {
     }
 
     const t = performance.now() * 0.003;
-    glowLights.forEach((l, i) => (l.intensity = 8.5 + Math.sin(t + i) * 1.5));
+    glowLights.forEach((l, i) => (l.intensity = glowBase[i] * (0.88 + Math.sin(t + i) * 0.12)));
   });
 
   setStatus('克洛斯星 · WASD/方向键移动 · Shift 加速 · 拖动旋转视角 · 滚轮缩放');

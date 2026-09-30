@@ -1,0 +1,82 @@
+{
+  "maneater": {
+    "id": "1496560268410355712",
+    "status": "DONE",
+    "credits": 40
+  },
+  "crystal": {
+    "id": "1496560517124079616",
+    "status": "DONE",
+    "credits": 40
+  },
+  "pink_root": {
+    "id": "1496560517140856832",
+    "status": "DONE",
+    "credits": 40
+  },
+  "lantern": {
+    "id": "1496561525808168960",
+    "status": "DONE",
+    "credits": 40
+  },
+  "pink_mound": {
+    "id": "1496561525803974656",
+    "status": "DONE",
+    "credits": 40
+  },
+  "portal": {
+    "id": "1496561568023838720",
+    "status": "DONE",
+    "credits": 40
+  },
+  "worm": {
+    "id": "1496562429588406272",
+    "status": "DONE",
+    "credits": 40
+  },
+  "vine": {
+    "id": "1496562473041125376",
+    "status": "DONE",
+    "credits": 40
+  },
+  "cliff": {
+    "id": "1496562557648896000",
+    "status": "DONE",
+    "credits": 40
+  },
+  "rock": {
+    "id": "1496563372010496000",
+    "status": "DONE",
+    "credits": 40
+  },
+  "tree": {
+    "id": "1496563543398367232",
+    "status": "DONE",
+    "credits": 40
+  },
+  "bush": {
+    "id": "1496563627905204224",
+    "status": "DONE",
+    "credits": 40
+  },
+  "grass": {
+    "id": "1496564399371706368",
+    "status": "DONE",
+    "credits": 40
+  },
+  "blue_flower": {
+    "id": "1496564569794936832",
+    "status": "DONE",
+    "credits": 40
+  },
+  "mountain": {
+    "id": "1496564868446044160",
+    "status": "DONE",
+    "credits": 40
+  },
+  "robot": {
+    "id": "1496565467841511424",
+    "status": "DONE",
+    "credits": 40
+  }
+}
