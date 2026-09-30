@@ -8,10 +8,14 @@
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1a0d08; }
       #app { width: 100%; height: 100%; display: block; outline: none; }
       #hud { position: fixed; left: 16px; top: 12px; color: #fff; font: 14px/1.5 system-ui, sans-serif; text-shadow: 0 1px 3px #000; pointer-events: none; }
+          #nav { position: fixed; right: 16px; top: 12px; display: flex; gap: 8px; font: 14px system-ui, sans-serif; }
+      #nav a { color: #fff; text-decoration: none; padding: 6px 12px; border-radius: 16px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.25); }
+      #nav a.on { background: rgba(255,140,40,.85); border-color: transparent; }
     </style>
   </head>
   <body>
     <canvas id="app"></canvas>
+    <div id="nav"></div>
     <div id="hud">克洛斯星 · 拖动旋转 / 滚轮缩放 / 右键平移</div>
     <script type="module" src="/src/main.ts"></script>
   </body>

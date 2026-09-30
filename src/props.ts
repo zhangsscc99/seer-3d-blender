@@ -5,6 +5,7 @@ import {
   LoadAssetContainerAsync,
   PBRMaterial,
   Scene,
+  Texture,
   TransformNode,
   Vector3,
 } from '@babylonjs/core';
@@ -23,11 +24,19 @@ const protos = new Map<PropName, Proto>();
 
 export interface LoadOptions {
   emissive?: number;
+  nearest?: boolean;
 }
 
 export async function loadProp(scene: Scene, name: PropName, opts: LoadOptions = {}) {
   const container = await LoadAssetContainerAsync(`/models/${name}.glb`, scene);
   for (const m of container.meshes) m.receiveShadows = true;
+  if (opts.nearest) {
+    for (const mat of container.materials) {
+      if (mat instanceof PBRMaterial && mat.albedoTexture) {
+        (mat.albedoTexture as Texture).updateSamplingMode(Texture.NEAREST_NEAREST);
+      }
+    }
+  }
   if (opts.emissive) {
     for (const mat of container.materials) {
       if (!(mat instanceof PBRMaterial)) continue;
