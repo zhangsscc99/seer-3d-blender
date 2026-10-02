@@ -7,6 +7,7 @@ if (nav) {
   for (const [id, label] of [
     ['kelosi', '克洛斯星'],
     ['station', '赛尔号空间站'],
+    ['invention', '发明室 I'],
   ]) {
     const a = document.createElement('a');
     a.textContent = label;
@@ -17,4 +18,5 @@ if (nav) {
 }
 
 if (which === 'station') await import('./station');
+else if (which === 'invention') await import('./invention');
 else await import('./kelosi');
