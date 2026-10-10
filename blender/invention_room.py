@@ -9,7 +9,7 @@ import os
 import sys
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 
@@ -275,44 +275,168 @@ for x in (-3.9,-3.65):
 collider(0, TY, 2.4)
 light(0, RY - 2.2, 2.6, CYAN, 28, 9)
 
-# ---------------------------------------------------------------- 孵化舱（前左）
-PX, PY = -6.3, -2.6
-# 六边形凹槽通过切除地砖实现，槽底低于地面 0.1m。
-bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=2.0, depth=0.5, location=(PX,PY,0))
+# ---------------------------------------------------------------- NONO 大舱（前左，参考图区域 1）
+# 轮廓分成玻璃罩、粗分段环管、深色机械基座与六边形外护沿。
+PX, PY = -6.3, -0.8
+POD_FOOTPRINT = 2.64
+POD_DECK = 1.86
+POD_GLASS_R = 1.83
+M_POD_DARK = mat("pod_navy", (0.035, 0.085, 0.115), 0.62, 0.34)
+M_POD_SILVER = mat("pod_silver", (0.59, 0.67, 0.71), 0.78, 0.30, coat=0.22)
+M_POD_GLASS = mat("pod_glass", (0.10, 0.46, 0.58), 0.12, 0.14, alpha=0.19, coat=0.35)
+M_POD_LIGHT = mat("pod_light", (0.035, 0.3, 0.34), 0.18, 0.3, emit=(0.10, 0.76, 0.85), strength=1.4)
+
+
+def pod_ring_band(name, radius, width, z, height, a0=0, a1=2*math.pi, material=M_POD_SILVER):
+    # 实心环扇：可留接缝，又不会像整圆柱那样封住玻璃下的舱内空间。
+    count = max(4, int((a1-a0)*24))
+    vertices = []
+    for i in range(count+1):
+        angle = a0+(a1-a0)*i/count
+        for r, h in ((radius-width/2,z-height/2),(radius+width/2,z-height/2),
+                     (radius+width/2,z+height/2),(radius-width/2,z+height/2)):
+            vertices.append((PX+r*math.cos(angle),PY+r*math.sin(angle),h))
+    faces = [(3,2,1,0)]
+    for i in range(count):
+        for j in range(4):
+            faces.append((4*i+j,4*i+(j+1)%4,4*(i+1)+(j+1)%4,4*(i+1)+j))
+    faces.append(tuple(4*count+j for j in range(4)))
+    mesh=bpy.data.meshes.new(name)
+    mesh.from_pydata(vertices, [], [tuple(reversed(face)) for face in faces])
+    mesh.update()
+    o=bpy.data.objects.new(name,mesh)
+    bpy.context.collection.objects.link(o)
+    return _finish(o,name,material,.022,"pod")
+
+
+def pod_pipe_arc(name, radius, z, thickness, a0, a1, material=M_POD_SILVER):
+    return tube(name, [(PX+radius*math.cos(a0+(a1-a0)*i/20),
+                        PY+radius*math.sin(a0+(a1-a0)*i/20),z) for i in range(21)],
+                thickness, material, closed=False, group="pod")
+
+
+# 下沉检修槽，护沿在最大 2.64m 半径内，保留与左墙的间隙。
+bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=POD_FOOTPRINT, depth=.6, location=(PX,PY,0))
 cutter=bpy.context.active_object
 for tile in list(objs_by_group["floor"]):
-    if tile.name.startswith("floor_tile") and (tile.location.x-PX)**2+(tile.location.y-PY)**2 < 20:
+    if tile.name.startswith("floor_tile") and (tile.location.x-PX)**2+(tile.location.y-PY)**2 < 30:
         mod=tile.modifiers.new("pod_recess", "BOOLEAN")
         mod.operation="DIFFERENCE"
         mod.object=cutter
         bpy.context.view_layer.objects.active=tile
         bpy.ops.object.modifier_apply(modifier=mod.name)
 bpy.data.objects.remove(cutter, do_unlink=True)
-cyl("pod_recess_floor", 2.0, 0.02, (PX,PY,-0.1), M_DARK, verts=6, group="pod")
-tube("pod_recess_rim", circle(PX,PY,0.045,2.02,n=6), 0.07, M_BRUSHED, group="pod")
-cyl("pod_base", 1.55, 0.7, (PX, PY, 0.35), M_METAL, bevel=0.04, verts=64, group="pod")
-cyl("pod_base_ring", 1.62, 0.12, (PX, PY, 0.76), M_METAL_L, verts=64, group="pod")
-cyl("pod_base_top", 1.35, 0.14, (PX, PY, 0.88), M_METAL_D, verts=64, group="pod")
-torus("pod_glow_ring", 1.28, 0.05, (PX, PY, 0.97), M_GLOW, group="pod")
-for k in range(8):
-    a = k / 8 * 2 * math.pi
-    box(f"pod_slit_{k}", (0.07, 0.05, 0.4), (PX + 1.55 * math.cos(a), PY + 1.55 * math.sin(a), 0.38), M_GLOW,
-        bevel=0, rot=(0, 0, a), group="pod")
-cyl("pod_platform_glow", 0.62, 0.04, (PX, PY, 0.97), M_GLOW, verts=48, group="pod")
-cyl("pod_foot_glow", 1.66, 0.04, (PX, PY, 0.06), M_GLOW_SOFT, verts=64, group="pod")
-# 玻璃罩（半球）
-bpy.ops.mesh.primitive_uv_sphere_add(radius=1.43, segments=48, ring_count=24, location=(PX, PY, 0.95))
-dome = bpy.context.active_object
+cyl("pod_recess_floor", POD_FOOTPRINT, .04, (PX,PY,-.13), M_DARK, verts=6, group="pod")
+cyl("pod_lower_foot", 2.13, .18, (PX,PY,.02), M_METAL_D, bevel=.035, verts=96, group="pod")
+cyl("pod_reactor_body", 1.93, 1.15, (PX,PY,.64), M_POD_DARK, verts=96, group="pod")
+pod_ring_band("pod_bottom_collar", 1.94, .15, .14, .17)
+pod_ring_band("pod_upper_support", 1.97, .22, 1.17, .23, material=M_METAL_D)
+
+# 12 块深色机身面板，边肋、凹槽和折线灯路清晰区分。
+for k in range(12):
+    a=k*math.tau/12
+    radial=Vector((math.cos(a),math.sin(a),0))
+    tangent=Vector((-math.sin(a),math.cos(a),0))
+    center=Vector((PX,PY,0))+radial*1.94
+    box(f"pod_body_rib_{k}",(.09,.10,.94),(*center[:2],.65),M_POD_SILVER,
+        bevel=.025,rot=(0,0,a),group="pod")
+    pts=[]
+    for side,z in ((.13,.23),(.13,.80),(.45,.80),(.45,1.01)):
+        p=Vector((PX,PY,z))+radial*1.956+tangent*side
+        pts.append(tuple(p))
+    tube(f"pod_panel_circuit_{k}",pts,.014,M_POD_LIGHT,closed=False,group="pod")
+
+# 两层环形主管：每段留暗缝，外露夹箍，避免原版简单圆盘堆叠。
+for k in range(24):
+    a=k*math.tau/24
+    pod_pipe_arc(f"pod_manifold_{k}",2.04,1.48,.19,a+.012,a+math.tau/24-.012)
+    if k%3==0:
+        pod_pipe_arc(f"pod_manifold_clamp_{k}",2.04,1.48,.212,a-.021,a+.021,M_METAL_D)
+for k in range(12):
+    a=k*math.tau/12
+    pod_pipe_arc(f"pod_lower_pipe_{k}",2.10,1.19,.13,a+.01,a+math.tau/12-.01)
+pod_ring_band("pod_neck_shadow",1.83,.25,1.72,.17,material=M_POD_DARK)
+pod_ring_band("pod_glass_bezel",1.86,.28,1.87,.15,material=M_POD_DARK)
+for k in range(16):
+    a=k*math.tau/16
+    pod_ring_band(f"pod_bezel_segment_{k}",1.99,.08,1.86,.17,a+.012,a+math.tau/16-.012)
+    if k%2==0:
+        for j in range(3):
+            theta=a+.10+j*.065
+            sph(f"pod_bezel_indicator_{k}_{j}",.026,
+                (PX+1.925*math.cos(theta),PY+1.925*math.sin(theta),1.955),M_POD_LIGHT,
+                scale=(1,1,.4),seg=12,group="pod")
+
+# 舱底为深青色甲板与平行细灯轨，NONO 下方不再放实心发光圆饼。
+cyl("pod_inner_deck",1.76,.045,(PX,PY,POD_DECK-.02),M_POD_DARK,verts=96,group="pod")
+for k,dx in enumerate((-.98,-.49,0,.49,.98)):
+    length=2*math.sqrt(1.68**2-dx**2)
+    box(f"pod_deck_track_{k}",(.035,length,.012),(PX+dx,PY,POD_DECK+.012),
+        M_POD_LIGHT,bevel=.006,group="pod")
+
+# 半椭球罩。金属脊只跨后半圈，前方保持通透以看清 NONO。
+bpy.ops.mesh.primitive_uv_sphere_add(radius=POD_GLASS_R,segments=64,ring_count=32,
+                                     location=(PX,PY,1.94))
+dome=bpy.context.active_object
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.bisect(plane_co=(0, 0, 0), plane_no=(0, 0, 1), clear_inner=True)
+bpy.ops.mesh.bisect(plane_co=(0,0,0),plane_no=(0,0,1),clear_inner=True)
 bpy.ops.object.mode_set(mode="OBJECT")
-_finish(dome, "pod_dome_smooth", M_GLASS, 0, "pod")
-# 三个 NONO 共用经过独立截图复核的模型；左舱不再使用兔子。
-build_nono('nono0', (PX,PY,1.35), scale=1.06, yaw=.40, bank=-.24, pitch=-.24)
-META["animated"]["nono0"]={"x":PX,"y":PY,"z":1.35}
-collider(PX, PY, 1.75)
-light(PX, PY, 1.8, CYAN, 22, 6)
+dome.scale.z=.92
+_finish(dome,"pod_dome_smooth",M_POD_GLASS,0,"pod")
+# 从左右基座跨过后顶部的弧形脊，和参考图的包边一致。
+for name,yoff,radius,thick,material in (("pod_dome_spine",.34,1.80,.065,M_POD_SILVER),
+                                      ("pod_dome_seal",.34,1.74,.023,M_POD_DARK)):
+    pts=[(PX+radius*math.cos(t*math.pi/64),PY+yoff,
+          1.94+radius*.92*math.sin(t*math.pi/64)) for t in range(65)]
+    tube(name,pts,thick,material,closed=False,group="pod")
+
+# 机身外侧的立式液压筒，顶盖青光但保留金属边。
+for k,deg in enumerate((-150,-90,-30,30,150)):
+    a=math.radians(deg)
+    x,y=PX+2.20*math.cos(a),PY+2.20*math.sin(a)
+    cyl(f"pod_piston_{k}",.18,.98,(x,y,.49),M_METAL_D,bevel=.022,group="pod")
+    for j in range(8):
+        t=j*math.tau/8
+        cyl(f"pod_piston_flute_{k}_{j}",.024,.82,(x+.17*math.cos(t),y+.17*math.sin(t),.48),
+            M_POD_SILVER,verts=8,group="pod")
+    cyl(f"pod_piston_cap_{k}",.205,.105,(x,y,1.03),M_POD_SILVER,bevel=.025,group="pod")
+    cyl(f"pod_piston_lamp_{k}",.158,.03,(x,y,1.093),M_POD_LIGHT,bevel=.012,group="pod")
+
+# 宽实的六边形护沿和嵌入式双灯条，不再使用细铁丝状围栏。
+rail_pts=circle(PX,PY,.23,2.48,n=6)
+for k in range(6):
+    p,q=Vector(rail_pts[k]),Vector(rail_pts[(k+1)%6])
+    d=q-p
+    c=(p+q)*.5
+    angle=math.atan2(d.y,d.x)
+    box(f"pod_guard_{k}",(d.length+.09,.26,.28),c,M_POD_SILVER,
+        bevel=.07,rot=(0,0,angle),group="pod")
+    box(f"pod_guard_gasket_{k}",(d.length-.07,.27,.032),(c.x,c.y,.115),M_METAL_D,
+        bevel=.01,rot=(0,0,angle),group="pod")
+    for j in (-1,1):
+        v=c+d.normalized()*(j*.53)
+        box(f"pod_guard_inset_{k}_{j}",(.48,.135,.018),(v.x,v.y,.375),M_POD_DARK,
+            bevel=.018,rot=(0,0,angle),group="pod")
+        box(f"pod_guard_light_{k}_{j}",(.38,.038,.014),(v.x,v.y,.388),M_POD_LIGHT,
+            bevel=.006,rot=(0,0,angle),group="pod")
+
+# 右前肩部斜置的小控制面板。
+a=-math.pi/5
+cx,cy=PX+1.99*math.cos(a),PY+1.99*math.sin(a)
+box("pod_control_shell",(.55,.44,.20),(cx,cy,1.78),M_POD_SILVER,bevel=.065,rot=(0,.25,a),group="pod")
+box("pod_control_face",(.38,.30,.025),(cx,cy,1.90),M_POD_DARK,bevel=.04,rot=(0,.25,a),group="pod")
+torus("pod_control_symbol",.083,.015,(cx,cy,1.93),M_POD_LIGHT,rot=(0,.25,0),ms=24,mn=8,group="pod")
+
+# 大舱在总览中要有前景的高度；仅拉高机壳，NONO 保持原本比例。
+POD_HEIGHT_SCALE = 1.18
+for part in objs_by_group['pod']:
+    part.matrix_world = Matrix.Diagonal((1,1,POD_HEIGHT_SCALE,1)) @ part.matrix_world
+# 放大舱内实例以匹配大罩；NONO 的共享几何保持 v7。
+build_nono('nono0',(PX,PY,2.43*POD_HEIGHT_SCALE),scale=1.42,yaw=.40,bank=-.24,pitch=-.24)
+META["animated"]["nono0"]={"x":PX,"y":PY,"z":2.43*POD_HEIGHT_SCALE}
+collider(PX,PY,POD_FOOTPRINT)
+light(PX,PY,2.35*POD_HEIGHT_SCALE,CYAN,22,6)
 
 # ---------------------------------------------------------------- 全息投影底座（前中偏左）
 HX, HY = -1.7, -3.3
@@ -448,8 +572,9 @@ light(5.8, 4.8, 2.6, CYAN, 22, 7)
 build_nono('nono1', (-2.9,3.5,1.12), scale=.95, yaw=.18, bank=-.34, pitch=-.24)
 META["animated"]["nono1"]={"x":-2.9,"y":3.5,"z":1.12}
 
-# ---------------------------------------------------------------- 侧面补充：左右墙边的小设备
-for sx in (-1, 1):
+# ---------------------------------------------------------------- 右侧墙边的小设备
+# 左侧旧占位柜位于扩大的大舱检修区内，随区域 1 重建移除。
+for sx in (1,):
     box(f"side_cab_{sx}", (0.9, 2.2, 1.1), (sx * (RX - 0.55), 0.5 * sx, 0.55), M_METAL_D, bevel=0.04, group="side")
     box(f"side_cab_top_{sx}", (0.95, 2.25, 0.1), (sx * (RX - 0.55), 0.5 * sx, 1.15), M_METAL_L, bevel=0.03, group="side")
     box(f"side_cab_glow_{sx}", (0.04, 1.8, 0.08), (sx * (RX - 1.02), 0.5 * sx, 0.9), M_GLOW, bevel=0, group="side")

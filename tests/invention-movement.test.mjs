@@ -13,8 +13,9 @@ test('spawn is free and the former hologram-overlapping spawn is rejected', () =
 });
 
 test('a long move cannot tunnel into or through the incubation chamber', () => {
-  const position = moveInRoom({ x: 4, z: 2.6 }, 6, 0, collision);
-  assert.ok(position.x <= 4.28 && position.x >= 4.15);
+  const position = moveInRoom({ x: 2.5, z: 0.8 }, 6, 0, collision);
+  // 新大舱包含外护沿：6.3 - 2.64 - 0.28 = 3.38m。
+  assert.ok(position.x <= 3.38 && position.x >= 3.30);
   assert.equal(canOccupy(position.x, position.z, collision), true);
 });
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "参考图分区重建"
+  short_description: "按参考图逐区重建 Blender 场景，导入网页并检查视觉与碰撞"
+  default_prompt: "使用 $reference-scene-rebuild 对照参考图修复指定区域，导入场景后截图复核。"

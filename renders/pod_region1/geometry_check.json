@@ -1,0 +1,22 @@
+{
+  "podMeshCount": 231,
+  "bounds": [
+    [
+      -8.887076377868652,
+      -3.712923765182495
+    ],
+    [
+      -3.440000057220459,
+      1.8400001525878906
+    ],
+    [
+      -0.1769999861717224,
+      4.316225528717041
+    ]
+  ],
+  "nonoMaximumEllipsoidFractionWithBob": 0.9285069050692422,
+  "nonoMinimumHeightWithBob": 2.530258255004883,
+  "deckHeight": 2.1948,
+  "colliderRadius": 2.64,
+  "issues": []
+}
