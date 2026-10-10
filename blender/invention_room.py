@@ -19,6 +19,8 @@ def arg(name, default=None):
 
 
 ROOT = os.getcwd()
+sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent))
+from nono import build_nono
 GLB = arg("--glb")
 RENDER = arg("--render")
 CAM = arg("--cam", "ref")
@@ -65,13 +67,13 @@ CYAN = (0.12, 0.85, 1.0)
 M_METAL = mat("steel", (0.72, 0.76, 0.82), 0.85, 0.3, coat=0.2)
 M_METAL_D = mat("steel_dark", (0.36, 0.4, 0.47), 0.85, 0.36)
 M_METAL_L = mat("steel_light", (0.88, 0.9, 0.94), 0.8, 0.26)
-M_FLOOR = mat("floor_tile", (0.66, 0.71, 0.78), 0.8, 0.2, coat=0.4)
-M_FLOOR_IN = mat("floor_inlay", (0.46, 0.52, 0.6), 0.85, 0.16, coat=0.5)
+M_FLOOR = mat("floor_tile", (0.66, 0.71, 0.78), 0.55, 0.42, coat=0.15)
+M_FLOOR_IN = mat("floor_inlay", (0.46, 0.52, 0.6), 0.65, 0.4, coat=0.15)
 M_WALL = mat("wall_panel", (0.62, 0.67, 0.74), 0.8, 0.34)
 M_WALL_D = mat("wall_dark", (0.14, 0.17, 0.22), 0.8, 0.45)
 M_WHITE = mat("white_plastic", (0.93, 0.95, 0.98), 0.0, 0.28, coat=0.4)
-M_GLOW = mat("glow_cyan", (0.02, 0.1, 0.14), 0.0, 0.4, emit=CYAN, strength=5.0)
-M_GLOW_SOFT = mat("glow_soft", (0.02, 0.1, 0.14), 0.0, 0.4, emit=CYAN, strength=2.2)
+M_GLOW = mat("glow_cyan", (0.02, 0.1, 0.14), 0.0, 0.4, emit=CYAN, strength=2.4)
+M_GLOW_SOFT = mat("glow_soft", (0.02, 0.1, 0.14), 0.0, 0.4, emit=CYAN, strength=1.2)
 M_GLASS = mat("glass", (0.55, 0.8, 1.0), 0.0, 0.05, alpha=0.22)
 M_GLASS_T = mat("glass_tube", (0.6, 0.85, 1.0), 0.0, 0.05, alpha=0.16)
 M_DARK = mat("dark_rubber", (0.03, 0.035, 0.05), 0.2, 0.6)
@@ -82,6 +84,10 @@ M_GREY = mat("grey_body", (0.55, 0.6, 0.65), 0.6, 0.4)
 M_HOLO = mat("holo_body", (0.3, 0.7, 1.0), 0.0, 0.3, emit=(0.35, 0.85, 1.0), strength=2.5, alpha=0.4)
 M_ORANGE = mat("accent_orange", (1.0, 0.55, 0.12), 0.2, 0.35, emit=(1.0, 0.5, 0.1), strength=1.5)
 
+
+M_BLUE = mat("blue_enamel", (0.015, 0.13, 0.32), 0.55, 0.28, coat=0.3)
+M_BRUSHED = mat("brushed_steel", (0.68, 0.73, 0.79), 0.8, 0.35)
+M_BEAM = mat("holo_beam", (0.12, 0.5, 0.75), rough=0.5, emit=CYAN, strength=0.6, alpha=0.09)
 
 # ---------------------------------------------------------------- 几何工具
 def _finish(o, name, m, bevel, group):
@@ -177,50 +183,32 @@ def light(x, y, z, color, power, rng=8):
 # ---------------------------------------------------------------- 房间尺寸
 RX, RY, RH = 9.0, 7.0, 5.0     # 半宽、半深、高
 
-# 地板：2m 瓷砖 + 嵌缝
-tiles_x = int(RX * 2 / 2)
-tiles_y = int(RY * 2 / 2)
-for i in range(tiles_x):
-    for j in range(tiles_y):
-        x = -RX + 1 + i * 2
-        y = -RY + 1 + j * 2
-        box(f"floor_tile_{i}_{j}", (1.94, 1.94, 0.12), (x, y, -0.06), M_FLOOR, bevel=0.025, group="floor")
-box("floor_base", (RX * 2 + 0.2, RY * 2 + 0.2, 0.1), (0, 0, -0.17), M_DARK, bevel=0, group="floor")
-
-# 中央跑道：大圆 + 两侧椭圆（嵌入式发光边）
-cyl("floor_disc", 2.45, 0.025, (0, 0, 0.012), M_FLOOR_IN, verts=96, group="floor")
-tube("track_circle", circle(0, 0, 0.045, 2.2), 0.045, M_GLOW, group="floor")
-tube("track_circle_inner", circle(0, 0, 0.04, 1.55), 0.025, M_GLOW_SOFT, group="floor")
+# 大块金属地板，细接缝；灯带嵌在深灰轨道里。
+for i in range(6):
+    for j in range(4):
+        box(f"floor_tile_{i}_{j}", (2.984, 3.484, 0.12),
+            (-7.5 + i * 3, -5.25 + j * 3.5, -0.06), M_FLOOR, bevel=0.006, group="floor")
+box("floor_base", (18.2, 14.2, 0.1), (0, 0, -0.17), M_METAL_D, bevel=0, group="floor")
+cyl("floor_disc", 2.15, 0.02, (0, 0, 0.011), M_METAL_D, verts=96, group="floor")
+cyl("floor_disc_inner", 1.98, 0.024, (0, 0, 0.015), M_FLOOR_IN, verts=96, group="floor")
+tube("track_circle", circle(0, 0, 0.026, 2.05), 0.015, M_GLOW_SOFT, group="floor")
+for sy in (-1, 1):
+    # 中央眼形标记：两条相向弧线。
+    pts = [(1.78 * math.cos(a), sy * (0.60 * math.sin(a)), 0.036)
+           for a in [i * math.pi / 64 for i in range(65)]]
+    tube(f"track_lens_{sy}", pts, 0.018, M_METAL_L, closed=False, group="floor")
 for sx in (-1, 1):
-    for yy in (-1.35, 1.35):
-        cyl(f"floor_oval_{sx}_{yy}", 0.95, 0.025, (sx * 4.9, yy, 0.012), M_FLOOR_IN, verts=64, group="floor")
-    box(f"floor_oval_mid_{sx}", (1.9, 2.7, 0.025), (sx * 4.9, 0, 0.0125), M_FLOOR_IN, bevel=0, group="floor")
-    tube(f"track_oval_{sx}", stadium(sx * 4.9, 0, 0.045, 4.6, 1.9), 0.04, M_GLOW, group="floor")
-# 透镜（眼形）双弧
-def arc_pts(cx, cy, r, z, other, n=120):
-    pts = []
-    for i in range(n):
-        a = i / n * 2 * math.pi
-        x, y = cx + r * math.cos(a), cy + r * math.sin(a)
-        if math.hypot(x - other[0], y - other[1]) <= r - 0.02:
-            pts.append((x, y, z))
-    return pts
-
-
-for sy_ in (-1, 1):
-    pts = arc_pts(0, sy_ * 1.05, 1.95, 0.045, (0, -sy_ * 1.05))
-    pts.sort(key=lambda p: math.atan2(p[1] - sy_ * 1.05, p[0]))
-    if len(pts) > 3:
-        tube(f"track_lens_{sy_}", pts, 0.03, M_GLOW, closed=False, group="floor")
-# 胶囊面板边缘圆点灯
-for sx in (-1, 1):
-    pts = stadium(sx * 4.9, 0, 0.05, 4.6, 1.9, n=48)
-    for k, p in enumerate(pts):
-        cyl(f"track_dot_{sx}_{k}", 0.04, 0.03, (p[0], p[1], 0.06), M_GLOW, verts=12, group="floor")
-
-# 连接跑道的细线
-for sx in (-1, 1):
-    box(f"track_link_{sx}", (1.4, 0.05, 0.03), (sx * 3.0, 0, 0.03), M_GLOW_SOFT, bevel=0, group="floor")
+    cx = sx * 4.25
+    pts = [(cx + (p[1]), p[0], 0.025) for p in stadium(0, 0, 0, 4.7, 1.65)]
+    box(f"floor_lane_{sx}", (4.6, 1.72, 0.024), (cx, 0, 0.014), M_FLOOR_IN, bevel=0.12, group="floor")
+    tube(f"track_groove_{sx}", pts, 0.048, M_METAL_D, group="floor")
+    tube(f"track_oval_{sx}", [(x,y,0.061) for x,y,z in pts], 0.016, M_GLOW_SOFT, group="floor")
+    for k, (x,y,z) in enumerate(pts[::4]):
+        cyl(f"track_dot_{sx}_{k}", 0.026, 0.006, (x,y,0.075), M_GLOW, verts=10, group="floor")
+    box(f"track_bridge_{sx}", (0.36, 1.3, 0.04), (sx*2.05,0,0.036), M_FLOOR_IN, bevel=0.025, group="floor")
+    for dx in (-1.2, 1.2):
+        tube(f"track_bracket_{sx}_{dx}", [(cx+dx+0.14,-0.67,0.055),(cx+dx,-0.45,0.055),
+             (cx+dx,0.45,0.055),(cx+dx+0.14,0.67,0.055)], 0.023, M_METAL_L, closed=False, group="floor")
 
 # ---------------------------------------------------------------- 墙
 def wall(name, size, loc, rot=(0, 0, 0)):
@@ -235,12 +223,12 @@ wall("wall_front", (RX * 2 + 0.6, 0.4, RH), (0, -RY - 0.2, RH / 2))
 # 墙面板：竖向凸起 + 横向凹槽 + 发光带
 for i in range(-4, 5):
     x = i * 2.0
-    box(f"back_panel_{i}", (1.82, 0.1, 3.3), (x, RY - 0.05, 2.35), M_METAL_D, bevel=0.025, group="wall")
+    box(f"back_panel_{i}", (1.82, 0.1, 3.3), (x, RY - 0.05, 2.35), M_WALL, bevel=0.025, group="wall")
     box(f"back_panel_hi_{i}", (1.62, 0.04, 0.5), (x, RY - 0.12, 3.7), M_METAL, bevel=0.015, group="wall")
 for j in range(-3, 4):
     y = j * 2.0
     for sx, nm in ((-1, "left"), (1, "right")):
-        box(f"{nm}_panel_{j}", (0.1, 1.82, 3.3), (sx * (RX - 0.05), y, 2.35), M_METAL_D, bevel=0.025, group="wall")
+        box(f"{nm}_panel_{j}", (0.1, 1.82, 3.3), (sx * (RX - 0.05), y, 2.35), M_WALL, bevel=0.025, group="wall")
         box(f"{nm}_panel_hi_{j}", (0.04, 1.62, 0.5), (sx * (RX - 0.12), y, 3.7), M_METAL, bevel=0.015, group="wall")
 # 踢脚线、顶部饰条、发光带
 box("trim_back_low", (RX * 2, 0.16, 0.5), (0, RY - 0.08, 0.25), M_METAL_L, bevel=0.03, group="wall")
@@ -263,32 +251,45 @@ for i in range(-4, 5):
 tube("wall_bend_pipe", [(-RX + 0.3, 2.0, 3.9), (-RX + 0.3, 3.5, 3.9), (-RX + 0.3, 4.6, 4.2), (-RX + 0.3, 5.6, 4.35), (-RX + 0.8, 6.4, 4.35), (-RX + 1.6, RY - 0.3, 4.2)], 0.17, M_METAL, closed=False, group="wall")
 # ---------------------------------------------------------------- 终端区（后墙中央）
 TY = RY - 1.4
-box("platform_0", (7.4, 3.1, 0.14), (0, TY - 0.1, 0.07), M_METAL_L, bevel=0.03, group="terminal")
-box("platform_1", (6.6, 2.7, 0.14), (0, TY, 0.21), M_METAL_L, bevel=0.03, group="terminal")
-box("platform_1b", (5.8, 2.3, 0.14), (0, TY + 0.2, 0.35), M_METAL, bevel=0.03, group="terminal")
-box("platform_2", (5.0, 1.8, 0.2), (0, TY + 0.35, 0.52), M_METAL, bevel=0.04, group="terminal")
-box("platform_glow_0", (7.2, 0.03, 0.04), (0, TY - 1.65, 0.1), M_GLOW, bevel=0, group="terminal")
-box("platform_glow_1", (6.4, 0.04, 0.05), (0, TY - 1.36, 0.22), M_GLOW, bevel=0, group="terminal")
-box("platform_glow_2", (4.8, 0.04, 0.05), (0, TY - 0.53, 0.52), M_GLOW, bevel=0, group="terminal")
-# 屏幕与框
-box("screen_frame", (6.4, 0.22, 3.0), (0, RY - 0.18, 3.2), M_METAL_D, bevel=0.05, group="terminal")
-box("screen_surface", (5.9, 0.04, 2.7), (0, RY - 0.31, 3.2), M_SCREEN, bevel=0, group="terminal")
-box("screen_glow_l", (0.05, 0.05, 2.9), (-3.28, RY - 0.3, 3.2), M_GLOW, bevel=0, group="terminal")
-box("screen_glow_r", (0.05, 0.05, 2.9), (3.28, RY - 0.3, 3.2), M_GLOW, bevel=0, group="terminal")
-# 控制台
-box("console_body", (4.2, 1.1, 0.95), (0, TY + 0.45, 1.1), M_METAL_D, bevel=0.05, group="terminal")
-box("console_top", (4.3, 1.15, 0.12), (0, TY + 0.45, 1.62), M_METAL_L, bevel=0.04, rot=(math.radians(-8), 0, 0), group="terminal")
-box("console_glow", (3.9, 0.04, 0.06), (0, TY - 0.15, 1.15), M_GLOW, bevel=0, group="terminal")
-for i in range(-4, 5):
-    box(f"console_key_{i}", (0.28, 0.2, 0.05), (i * 0.4, TY + 0.15, 1.72), M_GLOW_SOFT, bevel=0.01, group="terminal")
+box("platform_0", (4.6, 2.5, 0.14), (0, TY, 0.07), M_METAL_D, bevel=0.03, group="terminal")
+box("platform_1", (4.0, 1.95, 0.14), (0, TY+0.25, 0.21), M_METAL_D, bevel=0.03, group="terminal")
 for sx in (-1, 1):
-    box(f"console_side_{sx}", (0.5, 0.9, 1.5), (sx * 2.75, TY + 0.45, 1.0), M_METAL, bevel=0.04, group="terminal")
-    box(f"console_side_glow_{sx}", (0.3, 0.04, 0.3), (sx * 2.75, TY - 0.02, 1.4), M_GLOW, bevel=0.01, group="terminal")
-collider(0, TY, 3.6)
-light(0, RY - 2.2, 2.6, CYAN, 90, 12)
+    box(f"platform_rail_{sx}", (0.4, 2.6, 0.3), (sx*2.25, TY, 0.15), M_BRUSHED, bevel=0.04, group="terminal")
+    box(f"platform_marker_{sx}", (0.2, 0.18, 0.012), (sx*2.25, TY-1.1, 0.307), M_GLOW_SOFT, group="terminal")
+# 屏幕与框
+box("screen_frame", (4.3, 0.22, 2.65), (0, RY - 0.18, 3.2), M_METAL_D, bevel=0.05, group="terminal")
+# 独立平面保留完整 0..1 UV，避免立方体 UV 把 HUD 裁切。
+bpy.ops.mesh.primitive_plane_add(size=2, location=(0, RY-0.31, 3.2), rotation=(math.pi/2,0,0))
+screen = bpy.context.active_object
+screen.scale = (1.96, 1.16, 1)
+_finish(screen, "screen_surface", M_SCREEN, 0, "terminal")
+box("screen_glow_l", (0.03, 0.05, 2.35), (-2.1, RY - 0.3, 3.2), M_GLOW, bevel=0, group="terminal")
+box("screen_glow_r", (0.03, 0.05, 2.35), (2.1, RY - 0.3, 3.2), M_GLOW, bevel=0, group="terminal")
+# 台阶上方的薄控制面板。
+box("console_body", (2.9, 0.5, 0.22), (0, TY+0.5, 0.4), M_METAL_D, bevel=0.04, group="terminal")
+for i in range(-3, 4):
+    box(f"console_key_{i}", (0.25,0.16,0.018), (i*0.36,TY+0.4,0.52), M_GLOW_SOFT, group="terminal")
+for x in (-3.9,-3.65):
+    tube(f"pipe_back_vertical_{x}", [(x,6.6,5),(x,6.6,3.8),(x+0.3,6.6,3.3),(x+0.3,6.6,1)],
+         0.075, M_METAL_D, closed=False, group="wall")
+collider(0, TY, 2.4)
+light(0, RY - 2.2, 2.6, CYAN, 28, 9)
 
 # ---------------------------------------------------------------- 孵化舱（前左）
-PX, PY = -5.6, -3.1
+PX, PY = -6.3, -2.6
+# 六边形凹槽通过切除地砖实现，槽底低于地面 0.1m。
+bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=2.0, depth=0.5, location=(PX,PY,0))
+cutter=bpy.context.active_object
+for tile in list(objs_by_group["floor"]):
+    if tile.name.startswith("floor_tile") and (tile.location.x-PX)**2+(tile.location.y-PY)**2 < 20:
+        mod=tile.modifiers.new("pod_recess", "BOOLEAN")
+        mod.operation="DIFFERENCE"
+        mod.object=cutter
+        bpy.context.view_layer.objects.active=tile
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+bpy.data.objects.remove(cutter, do_unlink=True)
+cyl("pod_recess_floor", 2.0, 0.02, (PX,PY,-0.1), M_DARK, verts=6, group="pod")
+tube("pod_recess_rim", circle(PX,PY,0.045,2.02,n=6), 0.07, M_BRUSHED, group="pod")
 cyl("pod_base", 1.55, 0.7, (PX, PY, 0.35), M_METAL, bevel=0.04, verts=64, group="pod")
 cyl("pod_base_ring", 1.62, 0.12, (PX, PY, 0.76), M_METAL_L, verts=64, group="pod")
 cyl("pod_base_top", 1.35, 0.14, (PX, PY, 0.88), M_METAL_D, verts=64, group="pod")
@@ -300,75 +301,84 @@ for k in range(8):
 cyl("pod_platform_glow", 0.62, 0.04, (PX, PY, 0.97), M_GLOW, verts=48, group="pod")
 cyl("pod_foot_glow", 1.66, 0.04, (PX, PY, 0.06), M_GLOW_SOFT, verts=64, group="pod")
 # 玻璃罩（半球）
-bpy.ops.mesh.primitive_uv_sphere_add(radius=1.25, segments=48, ring_count=24, location=(PX, PY, 0.95))
+bpy.ops.mesh.primitive_uv_sphere_add(radius=1.43, segments=48, ring_count=24, location=(PX, PY, 0.95))
 dome = bpy.context.active_object
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.bisect(plane_co=(0, 0, PX * 0 + 0.95), plane_no=(0, 0, 1), clear_inner=True)
+bpy.ops.mesh.bisect(plane_co=(0, 0, 0), plane_no=(0, 0, 1), clear_inner=True)
 bpy.ops.object.mode_set(mode="OBJECT")
 _finish(dome, "pod_dome_smooth", M_GLASS, 0, "pod")
-# Nono 兔子
-NZ = 0.95 + 0.38
-sph("nono_body", 0.34, (PX, PY, NZ), M_WHITE, (1, 0.95, 1.05), group="pod")
-sph("nono_head", 0.3, (PX, PY - 0.02, NZ + 0.5), M_WHITE, (1.1, 1, 0.95), group="pod")
-for sx in (-1, 1):
-    sph(f"nono_ear_{sx}", 0.1, (PX + sx * 0.17, PY, NZ + 0.95), M_WHITE, (0.7, 0.55, 2.4), group="pod")
-    sph(f"nono_ear_in_{sx}", 0.06, (PX + sx * 0.17, PY - 0.045, NZ + 0.93), M_ORANGE, (0.6, 0.4, 2.0), group="pod")
-    sph(f"nono_eye_{sx}", 0.055, (PX + sx * 0.12, PY - 0.27, NZ + 0.53), M_EYE, (1, 0.5, 1.2), group="pod")
-    sph(f"nono_arm_{sx}", 0.1, (PX + sx * 0.33, PY - 0.08, NZ + 0.05), M_WHITE, (0.7, 0.7, 1.3), group="pod")
-    sph(f"nono_foot_{sx}", 0.11, (PX + sx * 0.16, PY - 0.12, NZ - 0.33), M_WHITE, (1, 1.3, 0.7), group="pod")
-sph("nono_nose", 0.03, (PX, PY - 0.31, NZ + 0.46), M_ORANGE, group="pod")
-sph("nono_tail", 0.1, (PX, PY + 0.33, NZ - 0.15), M_WHITE, group="pod")
+# 三个 NONO 共用经过独立截图复核的模型；左舱不再使用兔子。
+build_nono('nono0', (PX,PY,1.35), scale=1.06, yaw=.40, bank=-.24, pitch=-.24)
+META["animated"]["nono0"]={"x":PX,"y":PY,"z":1.35}
 collider(PX, PY, 1.75)
-light(PX, PY, 1.8, CYAN, 70, 8)
+light(PX, PY, 1.8, CYAN, 22, 6)
 
 # ---------------------------------------------------------------- 全息投影底座（前中偏左）
 HX, HY = -1.7, -3.3
-for k in range(6):
-    pass
-bpy.ops.mesh.primitive_cylinder_add(radius=0.75, depth=0.3, vertices=6, location=(HX, HY, 0.15))
-hexb = bpy.context.active_object
-_finish(hexb, "holo_base", M_METAL_L, 0.03, "holo")
-bpy.ops.mesh.primitive_cylinder_add(radius=0.58, depth=0.08, vertices=6, location=(HX, HY, 0.33))
-_finish(bpy.context.active_object, "holo_base_top", M_METAL_D, 0.01, "holo")
-torus("holo_base_glow", 0.5, 0.025, (HX, HY, 0.38), M_GLOW, group="holo")
-HZ = 1.25
-torus("holo_icon_ring", 0.36, 0.022, (HX, HY, HZ), M_GLOW, group="holo")
-torus("holo_icon_ring2", 0.24, 0.018, (HX, HY, HZ), M_GLOW_SOFT, rot=(math.pi / 2, 0, 0), group="holo")
-bpy.ops.mesh.primitive_cylinder_add(radius=0.12, depth=0.03, vertices=6, location=(HX, HY, HZ))
-_finish(bpy.context.active_object, "holo_icon_core", M_GLOW, 0, "holo")
-cyl("holo_beam", 0.5, 0.75, (HX, HY, 0.78), M_GLASS_T, verts=6, r2=0.35, group="holo")
-sph("holo_man_head", 0.09, (HX, HY, HZ + 0.34), M_HOLO, group="holo")
-cyl("holo_man_body", 0.12, 0.34, (HX, HY, HZ + 0.1), M_HOLO, verts=16, r2=0.08, group="holo")
-for k in range(5):
-    cyl(f"holo_scan_{k}", 0.32 - k * 0.02, 0.008, (HX, HY, HZ - 0.28 + k * 0.17), M_GLOW_SOFT, verts=32, group="holo")
+cyl("holo_base", 0.75, 0.09, (HX,HY,0.045), M_METAL_D, verts=6, bevel=0.018, group="holo")
+cyl("holo_base_top", 0.56, 0.015, (HX,HY,0.1), M_DARK, verts=6, group="holo")
+torus("holo_base_glow", 0.43, 0.015, (HX,HY,0.115), M_GLOW_SOFT, group="holo")
+HZ = 0.78
+cyl("holo_beam", 0.46, 0.92, (HX,HY,0.57), M_BEAM, verts=32, r2=0.3, group="holo")
+sph("holo_man_head", 0.12, (HX,HY,HZ+0.25), M_HOLO, group="holo")
+cyl("holo_man_body", 0.14, 0.35, (HX,HY,HZ), M_HOLO, verts=16, r2=0.09, group="holo")
+for k in range(3):
+    torus(f"holo_scan_{k}", 0.28, 0.008, (HX,HY,0.4+k*0.24), M_GLOW_SOFT, group="holo")
 META["animated"]["holo_icon"] = {"x": HX, "y": HY, "z": HZ}
-collider(HX, HY, 0.9)
-light(HX, HY, 1.3, CYAN, 40, 6)
+collider(HX, HY, 0.8)
+light(HX, HY, 1.3, CYAN, 12, 4)
 
 # ---------------------------------------------------------------- 弧形大型设备（前右）
-CX_, CY_ = 5.9, -2.9
+CX_, CY_ = 8.5, -2.7
+# 竖直圆弧外壳：截面绕 Y 轴展开，内侧朝向房间中央。
+def arch_segment(name, a0, a1, inner, outer, depth, m):
+    verts=[]
+    steps=10
+    for y in (-depth/2,depth/2):
+        for r in (inner,outer):
+            for i in range(steps+1):
+                a=math.radians(a0+(a1-a0)*i/steps)
+                verts.append((CX_-r*math.cos(a),CY_+y,0.2+r*math.sin(a)))
+    n=steps+1
+    faces=[]
+    for i in range(steps):
+        for u,v in ((0,n),(2*n,3*n),(0,2*n),(n,3*n)):
+            faces.append((u+i,u+i+1,v+i+1,v+i))
+    faces += [(0,n,3*n,2*n),(n-1,2*n-1,4*n-1,3*n-1)]
+    mesh=bpy.data.meshes.new(name)
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    o=bpy.data.objects.new(name,mesh)
+    bpy.context.collection.objects.link(o)
+    _finish(o,name,m,0.045,"curve")
+    # 网格顶点顺序统一，保证从房间内侧看也正确受光。
+    bpy.context.view_layer.objects.active=o
+    o.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    o.select_set(False)
 
-
-def capsule(name, r, length, loc, rot_z, m, group="curve"):
-    c = math.cos(rot_z)
-    sn = math.sin(rot_z)
-    cyl(name + "_mid", r, length, loc, m, verts=40, bevel=0, rot=(0, math.pi / 2, rot_z), group=group)
-    for sgn in (-1, 1):
-        sph(f"{name}_end{sgn}", r, (loc[0] + sgn * c * length / 2, loc[1] + sgn * sn * length / 2, loc[2]), m, group=group)
-
-
-segs = [(-0.55, 0.15, 0.55, -0.35), (0.0, 0.0, 0.62, 0.0), (0.55, 0.15, 0.55, 0.35)]
-for k, (dx, dy, rr, rz) in enumerate(segs):
-    capsule(f"curve_seg{k}", rr, 1.7, (CX_ + dx * 2.2, CY_ + dy * 2.2, 0.75 + rr * 0.4), rz + math.pi / 2, M_METAL if k != 1 else M_METAL_L)
-    torus(f"curve_seg{k}_band", rr + 0.02, 0.035, (CX_ + dx * 2.2, CY_ + dy * 2.2, 0.75 + rr * 0.4), M_METAL_D,
-          rot=(0, math.pi / 2, rz + math.pi / 2 + math.pi / 2) if False else (math.pi / 2, 0, rz), group="curve")
-box("curve_plinth", (4.4, 2.4, 0.35), (CX_, CY_ + 0.2, 0.175), M_METAL_D, bevel=0.05, group="curve")
-box("curve_plinth_glow", (4.2, 0.04, 0.05), (CX_, CY_ - 0.98, 0.2), M_GLOW, bevel=0, group="curve")
-cyl("curve_port", 0.14, 0.06, (CX_, CY_ - 1.0, 0.95), M_GLOW, verts=24, rot=(math.pi / 2, 0, 0), group="curve")
-cyl("curve_port2", 0.1, 0.06, (CX_ + 1.3, CY_ - 0.85, 0.85), M_GLOW_SOFT, verts=24, rot=(math.pi / 2, 0, 0), group="curve")
-collider(CX_, CY_, 2.3)
-light(CX_, CY_ - 1.0, 1.2, CYAN, 45, 7)
+for k in range(4):
+    a0,a1=8+k*21,28+k*21
+    arch_segment(f"curve_shell_{k}",a0,a1,2.5,3.25,2.1,M_BRUSHED)
+    arch_segment(f"curve_seam_{k}",a1,a1+1,2.49,3.27,2.13,M_METAL_D)
+    a=math.radians((a0+a1)/2)
+    x,z=CX_-2.88*math.cos(a),0.2+2.88*math.sin(a)
+    box(f"curve_panel_frame_{k}",(0.55,0.11,0.63),(x,CY_-1.10,z),M_METAL_D,bevel=0.04,rot=(0,a,0),group="curve")
+    box(f"curve_panel_{k}",(0.38,0.03,0.44),(x,CY_-1.17,z),M_BLUE,bevel=0.025,rot=(0,a,0),group="curve")
+    box(f"curve_panel_light_{k}",(0.28,0.02,0.055),(x,CY_-1.20,z+0.10),M_GLOW_SOFT,rot=(0,a,0),group="curve")
+    cyl(f"curve_port_rim_{k}",0.22,0.12,(x,CY_+1.12,z),M_METAL_L,verts=32,rot=(math.pi/2,0,0),group="curve")
+    cyl(f"curve_port_{k}",0.16,0.13,(x,CY_+1.19,z),M_BLUE,verts=32,rot=(math.pi/2,0,0),group="curve")
+    px,pz=CX_-3.12*math.cos(a),0.2+3.12*math.sin(a)
+    cyl(f"curve_front_rim_{k}",0.13,0.05,(px,CY_-1.11,pz),M_METAL_L,verts=32,rot=(math.pi/2,0,0),group="curve")
+    cyl(f"curve_front_port_{k}",0.09,0.055,(px,CY_-1.15,pz),M_BLUE,verts=32,rot=(math.pi/2,0,0),group="curve")
+box("curve_foot",(0.85,2.25,0.5),(5.65,CY_,0.25),M_METAL_D,bevel=0.1,group="curve")
+for x in (6.2,7.3,8.2):
+    collider(x,CY_,1.15)
+light(6.4,CY_-1,1.5,CYAN,18,5)
 
 # ---------------------------------------------------------------- 后左设备：矮圆机 + 高个传感机
 SX_, SY_ = -6.7, 4.6
@@ -382,20 +392,20 @@ cyl("squat_pipe", 0.17, 3.2, (SX_ - 0.3, RY - 0.45, 1.6), M_METAL, verts=24, rot
 cyl("squat_pipe_h", 0.17, 1.9, (SX_ - 0.3, SY_ + 0.9, 2.55), M_METAL, verts=24, rot=(math.pi / 2, 0, 0), group="machine")
 collider(SX_, SY_, 1.1)
 
-TX_, TY_ = -4.3, 5.3
-cyl("tall_base", 0.7, 0.4, (TX_, TY_, 0.2), M_METAL_D, bevel=0.03, verts=48, group="machine")
-cyl("tall_column", 0.38, 1.9, (TX_, TY_, 1.3), M_METAL, bevel=0.03, verts=32, group="machine")
-torus("tall_column_glow", 0.4, 0.035, (TX_, TY_, 1.0), M_GLOW, group="machine")
-box("tall_head", (0.95, 0.8, 0.62), (TX_, TY_ - 0.1, 2.5), M_METAL_L, bevel=0.07, group="machine")
-cyl("tall_lens", 0.25, 0.3, (TX_, TY_ - 0.62, 2.5), M_DARK, verts=32, rot=(math.pi / 2, 0, 0), group="machine")
-torus("tall_lens_ring", 0.26, 0.03, (TX_, TY_ - 0.78, 2.5), M_GLOW, rot=(math.pi / 2, 0, 0), group="machine")
-sph("tall_lens_eye", 0.13, (TX_, TY_ - 0.78, 2.5), M_GLOW, group="machine")
-box("tall_head_top", (0.6, 0.5, 0.12), (TX_, TY_ - 0.05, 2.88), M_METAL_D, bevel=0.03, group="machine")
-collider(TX_, TY_, 0.9)
-light(SX_, SY_, 2.2, CYAN, 35, 7)
+TX_, TY_ = -4.1, 5.1
+cyl("tall_base",0.82,0.28,(TX_,TY_,0.14),M_METAL_D,verts=48,group="machine")
+cyl("tall_base_glow",0.68,0.16,(TX_,TY_,0.32),M_GLOW_SOFT,verts=48,group="machine")
+cyl("tall_column",0.43,0.95,(TX_,TY_,0.88),M_METAL,verts=32,group="machine")
+cyl("tall_head",0.47,1.25,(TX_,TY_,1.75),M_BRUSHED,verts=48,bevel=0.06,rot=(0,math.pi/2,0),group="machine")
+for sx in (-1,1):
+    cyl(f"tall_head_cap_{sx}",0.40,0.1,(TX_+sx*0.67,TY_,1.75),M_METAL_D,verts=32,rot=(0,math.pi/2,0),group="machine")
+    box(f"tall_leg_{sx}",(0.22,0.5,0.8),(TX_+sx*0.55,TY_,0.7),M_METAL_D,rot=(0,sx*0.25,0),group="machine")
+box("tall_status",(0.38,0.035,0.24),(TX_,TY_-0.45,0.94),M_GLOW_SOFT,group="machine")
+collider(TX_,TY_,0.9)
+light(SX_,SY_,2.2,CYAN,18,6)
 
 # ---------------------------------------------------------------- 玻璃培养管（后右）
-def containment_tube(idx, x, y, with_bird):
+def containment_tube(idx, x, y, with_nono):
     cyl(f"tube{idx}_base", 0.95, 0.35, (x, y, 0.175), M_METAL_D, bevel=0.03, verts=48, group="tube")
     cyl(f"tube{idx}_base2", 0.82, 0.18, (x, y, 0.44), M_METAL, verts=48, group="tube")
     torus(f"tube{idx}_base_glow", 0.8, 0.04, (x, y, 0.55), M_GLOW, group="tube")
@@ -406,44 +416,37 @@ def containment_tube(idx, x, y, with_bird):
         a = k / 4 * 2 * math.pi + 0.4
         cyl(f"tube{idx}_rod_{k}", 0.025, 3.5, (x + 0.76 * math.cos(a), y + 0.76 * math.sin(a), 2.3), M_METAL_L,
             verts=10, group="tube")
-    if with_bird:
+    box(f"tube{idx}_readout_frame",(0.62,0.12,0.25),(x,y-0.92,0.25),M_METAL,group="tube")
+    box(f"tube{idx}_readout",(0.48,0.025,0.14),(x,y-0.99,0.27),M_BLUE,group="tube")
+    for k in range(3):
+        box(f"tube{idx}_readout_line{k}",(0.3-k*0.055,0.01,0.015),(x,y-1.01,0.23+k*0.045),M_GLOW_SOFT,group="tube")
+    if with_nono:
         box(f"tube{idx}_console", (1.0, 0.55, 0.5), (x - 1.35, y - 1.05, 0.5), M_METAL_D, bevel=0.04, group="tube")
         box(f"tube{idx}_screen", (0.8, 0.04, 0.35), (x - 1.35, y - 1.31, 0.6), M_SCREEN, bevel=0, rot=(math.radians(-25), 0, 0), group="tube")
-        z = 2.0
-        sph(f"bird{idx}_body", 0.3, (x, y, z), M_GREY, (1.0, 1.4, 1.0), group="tube")
-        sph(f"bird{idx}_head", 0.18, (x, y - 0.38, z + 0.2), M_METAL_L, group="tube")
-        cyl(f"bird{idx}_beak", 0.06, 0.2, (x, y - 0.6, z + 0.18), M_ORANGE, verts=12, r2=0.0, rot=(math.pi / 2, 0, 0), group="tube")
-        for sx in (-1, 1):
-            sph(f"bird{idx}_wing_{sx}", 0.4, (x + sx * 0.45, y + 0.05, z + 0.05), M_METAL, (0.9, 0.12, 0.6), group="tube")
-            sph(f"bird{idx}_eye_{sx}", 0.04, (x + sx * 0.08, y - 0.53, z + 0.26), M_GLOW, group="tube")
-        sph(f"bird{idx}_tail", 0.18, (x, y + 0.5, z - 0.1), M_GREY, (0.6, 1.5, 0.15), group="tube")
-        sph(f"bird{idx}_core", 0.09, (x, y - 0.02, z + 0.04), M_GLOW, group="tube")
-        META["animated"]["bird"] = {"x": x, "y": y, "z": z}
+        build_nono('nono2', (x,y,1.65), scale=.95, pitch=-.24)
+        META["animated"]["nono2"]={"x":x,"y":y,"z":1.65}
     else:
-        sph(f"tube{idx}_mist", 0.4, (x, y, 1.8), M_GLOW_SOFT, (1, 1, 1.8), group="tube")
+        cyl(f"claw{idx}_hub",0.25,0.45,(x,y,3.0),M_METAL_D,verts=24,group="tube")
+        torus(f"claw{idx}_ring",0.27,0.025,(x,y,3.12),M_GLOW_SOFT,group="tube")
+        for k in range(3):
+            a=k*math.tau/3
+            pts=[(x+0.23*math.cos(a),y+0.23*math.sin(a),3.05),
+                 (x+0.49*math.cos(a),y+0.49*math.sin(a),2.65),
+                 (x+0.39*math.cos(a),y+0.39*math.sin(a),2.2),
+                 (x+0.17*math.cos(a),y+0.17*math.sin(a),2.02)]
+            tube(f"claw{idx}_finger{k}",pts,0.085,M_BRUSHED,closed=False,group="tube")
+        sph(f"claw{idx}_core",0.16,(x,y,2.48),M_BLUE,group="tube")
     collider(x, y, 1.0)
 
 
 containment_tube(1, 4.7, 5.0, True)
 containment_tube(2, 7.0, 4.9, False)
-light(5.8, 4.8, 2.6, CYAN, 60, 9)
+light(5.8, 4.8, 2.6, CYAN, 22, 7)
 
-# ---------------------------------------------------------------- 悬浮小机器人
-def drone(idx, x, y, z):
-    sph(f"drone{idx}_body", 0.26, (x, y, z), M_WHITE, group="drone")
-    torus(f"drone{idx}_band", 0.265, 0.025, (x, y, z), M_DARK, group="drone")
-    sph(f"drone{idx}_eye", 0.1, (x, y - 0.22, z + 0.04), M_EYE, (1, 0.5, 1), group="drone")
-    for sx in (-1, 1):
-        cyl(f"drone{idx}_wing_{sx}", 0.2, 0.012, (x + sx * 0.4, y, z), M_HOLO, verts=32, rot=(0, math.pi / 2, 0), group="drone")
-        box(f"drone{idx}_arm_{sx}", (0.16, 0.04, 0.04), (x + sx * 0.26, y, z), M_METAL, bevel=0.01, group="drone")
-    sph(f"drone{idx}_light", 0.05, (x, y, z - 0.27), M_GLOW, group="drone")
-    META["animated"][f"drone{idx}"] = {"x": x, "y": y, "z": z}
-
-
-drone(0, -0.6, 0.8, 2.3)
-drone(1, 2.4, -0.6, 2.7)
-drone(2, 0.9, 2.6, 3.1)
-light(0.6, 0.8, 2.6, CYAN, 25, 6)
+# ---------------------------------------------------------------- 中央悬浮 NONO
+# 轻微侧倾复刻特写中左翼近水平、右翼上扬的投影。
+build_nono('nono1', (-2.9,3.5,1.12), scale=.95, yaw=.18, bank=-.34, pitch=-.24)
+META["animated"]["nono1"]={"x":-2.9,"y":3.5,"z":1.12}
 
 # ---------------------------------------------------------------- 侧面补充：左右墙边的小设备
 for sx in (-1, 1):

@@ -2,6 +2,33 @@
 
 目标:用 Babylon.js 做一个接近 3A 画质的网页版 3D 赛尔号,优先使用已有资产。用户要求全程使用简体中文沟通。
 
+## 当前保存点（2026-10-10）
+
+用户要求先提交当前版本，再按原图从左到右列差异，后续逐项修改。此保存点包含 NONO v7、第一人称、天空盒及此前房间改动；功能检查通过不代表整体美术相似度已获用户认可。当前任务只保存和对比，不继续改模型。
+
+## 第一人称与天空盒更新（2026-10-04）
+
+用户新要求：发明室主角相机改为第一人称，并做好天空盒。现已完成：
+
+- 默认 `?scene=invention` 是第一人称：眼高1.45m，出生 Babylon `(0,1.45,4.6)`，WASD移动、Shift快走、鼠标锁定查看；不支持锁定时按住画面拖动，Esc释放。普通模式不加载可见主角模型，不剖切侧墙。镜头无强制晃动，仰俯不影响水平移动。
+- `?scene=invention&ref=1` 仍是美术对比用的正交总览；`?cam=...` 是旧调试总览。右下角可在第一人称/总览切换。**给用户预览第一人称时链接不能带 ref=1。**
+- `src/inventionFirstPerson.ts` 实现输入/视角，`src/inventionMovement.ts` 实现碰撞与两层台阶高度。修正旧出生点卡入全息底座，补小控制台碰撞。移动显式读取 Vector3 的 x/z，不能对它使用 object spread。
+- `src/inventionEnvironment.ts` 是本地程序天空：星场、微弱星云、带海陆云层/日夜面/大气边的行星，无限远不随行走平移。另含替代前墙的观景窗、顶棚、中央天窗、灯条；总览时隐藏新增室内构件。无需外部图片或网络资产。
+- 验证：`npm run build` 通过；`node --test tests/invention-movement.test.mjs` 六项通过（出生点、舱体/控制台防穿透、台阶、墙边滑动、真实 Babylon Vector3）。网页键盘事件、拖动转向、鼠标锁定降级反馈与渲染已检查；内嵌浏览器本次走拖动降级。子代理复核碰撞与真实室内/窗外截图。仍有已有的 bundle 大小提示。
+- 截图：`renders/invention_first_person.png`、`renders/invention_space_window.png`、合并预览 `renders/invention_fps_preview.png`。
+
+## 最新进度（2026-10-04，NONO 重新建模）
+
+用户明确反馈 v2 NONO 仍不像，要求重新参照原图三处，在 Blender 做好后再导入。**v2 的通过记录已被用户否定，不要当作当前验收结果。**
+
+- 当前使用 **v7**：`blender/nono.py` 生成圆顶机壳、深蓝黑拱形面罩、短粗双竖眼、后侧扁平裙翼、薄叶片 V 耳翼。保留 v1–v6 过程资产，最终独立 `.blend` / `.glb` / 三视图 / 三实例姿态在 `renders/nono_v7/`。
+- 新增原图三处裁切 `renders/nono_reference/`，并排对照 `renders/nono_v7/comparison.png`，网页实景 `renders/nono_scene_v7.png`，过程说明 `renders/NONO_REVIEW.md`。
+- 子代理重新独立看原图和新模型，指出旧版厚额头、尖三角脸、眼槽过长、底托不足。最终 v7 经六张 Blender 图复核后再导入，没有再发现必须先返工的明确几何问题；不再用主观百分数当作验收。
+- 恰有三只：左舱 `nono0`、中央 `nono1`、右管 `nono2`。共享13部件模型，运行时按前缀动画；`nono0` 锚点 z=1.35、scale=1.06，耳尖在完整悬浮幅度内仍位于玻璃半球内。中央与左舱各有不同侧倾/转向。
+- 修正了面罩/耳翼朝内法线，焊接叶片端点；检查无退化面、封闭外向壳体，面罩朝前。生产构建、GLB 三实例/锚点、网页无错误检查通过；保留既有大包体提示。
+- 本轮和此前房间修改已纳入 2026-10-10 保存点。不要恢复旧兔子、白球无人机、小鸟，或旧 `drone` / `bird` 动画分组。
+- 此前已改右前弧形设备、两层台阶、完整 UV HUD、较大地砖与横向轨道、低全息底座、机械爪与读数面板，修复玻璃罩切割坐标。`?ref=1` 使用正交正面构图。房间整体还需精修，下面原差异清单属于历史参考。
+
 ## 1. 技术栈与运行
 
 - Vite + TypeScript + Babylon.js 9(`@babylonjs/core`、`loaders`、`materials`)
@@ -45,11 +72,11 @@ glTF 导入 Babylon 后,Blender `(x, y, z)` 对应 Babylon `(-x, z, -y)`(绕 Y �
 
 ### 对象命名约定(Web 端靠前缀识别)
 - 墙:`wall_left/right/back/front`、`left_panel*`、`trim_*`、`glow_*`、`pipe_*`、`back_panel*`;相机一侧的墙会被自动隐藏,`front` 永远隐藏
-- 动画:`drone{i}_*` 上下浮动,`holo_icon/holo_man/holo_scan` 旋转
+- 动画:`nono{i}_*` 上下浮动,`holo_icon/holo_man/holo_scan` 旋转
 - 材质名:`floor_tile`、`steel`、`steel_light`、`wall_panel`、`glass`、`glass_tube`、`glow_cyan`、`hud_screen`、`holo_body` 等,Web 端会按名字改参数
 
-### 当前对比结果(上一轮子代理,相似度约 6/10)
-布局已对上:左前孵化舱 + 兔子、后墙 HUD 屏 + 平台、右后两根玻璃管、地面圆 + 椭圆轨道。
+### 历史对比结果（NONO 专项与本轮模型修改之前）
+布局已对上:左前孵化舱（现已替换为 NONO）、后墙 HUD 屏 + 平台、右后两根玻璃管、地面圆 + 椭圆轨道。
 
 待修(按优先级):
 1. **右前弧形大机器**不对:现在是 3 个横躺胶囊 + 小桌。应改成只露一角的圆弧分段大机器,带 2–3 块发光蓝色面板和深蓝圆形嵌入,拉丝金属(metallic 0.8,roughness 0.35)。

@@ -11,6 +11,11 @@
           #nav { position: fixed; right: 16px; top: 12px; display: flex; gap: 8px; font: 14px system-ui, sans-serif; }
       #nav a { color: #fff; text-decoration: none; padding: 6px 12px; border-radius: 16px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.25); }
       #nav a.on { background: rgba(255,140,40,.85); border-color: transparent; }
+      .fps-reticle { position: fixed; left: 50%; top: 50%; width: 4px; height: 4px; transform: translate(-50%, -50%); border: 1px solid rgba(208,249,255,.8); border-radius: 50%; box-shadow: 0 0 6px rgba(120,221,255,.3); pointer-events: none; }
+      .fps-help { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border: 1px solid rgba(144,222,243,.35); border-radius: 24px; color: #d5f4fc; background: rgba(5,20,35,.8); font: 13px system-ui,sans-serif; cursor: pointer; backdrop-filter: blur(8px); white-space: nowrap; }
+      .fps-help.is-locked { opacity: .62; pointer-events: none; }
+      .invention-view-switch { position: fixed; right: 18px; bottom: 28px; color: #c5edfa; font: 13px system-ui,sans-serif; padding: 9px 14px; border: 1px solid rgba(144,222,243,.3); border-radius: 20px; text-decoration: none; background: rgba(5,20,35,.8); }
+      @media (max-width: 650px) { #hud { max-width: 80%; top: 52px; font-size: 12px; } #nav { gap: 4px; right: 8px; } #nav a { padding: 6px 8px; font-size: 12px; } .fps-help { bottom: 68px; font-size: 11px; } .invention-view-switch { bottom: 18px; } }
     </style>
   </head>
   <body>
