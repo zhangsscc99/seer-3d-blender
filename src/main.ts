@@ -8,6 +8,7 @@ if (nav) {
     ['kelosi', '克洛斯星'],
     ['station', '赛尔号空间站'],
     ['invention', '发明室 I'],
+    ['power', '动力室 I'],
   ]) {
     const a = document.createElement('a');
     a.textContent = label;
@@ -19,4 +20,5 @@ if (nav) {
 
 if (which === 'station') await import('./station');
 else if (which === 'invention') await import('./invention');
+else if (which === 'power') await import('./power');
 else await import('./kelosi');

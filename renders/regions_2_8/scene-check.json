@@ -1,0 +1,13 @@
+{
+  "asset": "public/models/inv/invention_room.glb",
+  "mesh_count": 698,
+  "vertices": 145747,
+  "triangles": 242781,
+  "nono_parts": {
+    "nono0": 13,
+    "nono1": 13,
+    "nono2": 13
+  },
+  "collider_count": 11,
+  "issues": []
+}

@@ -9,6 +9,7 @@ import os
 import sys
 
 import bpy
+import bmesh
 from mathutils import Matrix, Vector
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
@@ -22,6 +23,7 @@ ROOT = os.getcwd()
 sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent))
 from nono import build_nono
 GLB = arg("--glb")
+BLEND = arg("--blend")
 RENDER = arg("--render")
 CAM = arg("--cam", "ref")
 SAMPLES = int(arg("--samples", "48"))
@@ -180,6 +182,49 @@ def light(x, y, z, color, power, rng=8):
     META["lights"].append({"x": x, "y": y, "z": z, "color": color, "power": power, "range": rng})
 
 
+# 实心定制网格统一计算外向法线，供装甲、环带和地面盖板共用。
+def solid(name, vertices, faces, material, bevel=.025, group="room"):
+    mesh=bpy.data.meshes.new(name)
+    mesh.from_pydata(vertices,[],faces)
+    mesh.update()
+    bm=bmesh.new(); bm.from_mesh(mesh)
+    bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces))
+    bm.to_mesh(mesh); bm.free()
+    o=bpy.data.objects.new(name,mesh)
+    bpy.context.collection.objects.link(o)
+    return _finish(o,name,material,bevel,group)
+
+
+def annulus(name,cx,cy,radius,width,z,height,material,group="room",a0=0,a1=math.tau):
+    n=max(3,int((a1-a0)*20)); vertices=[]
+    for i in range(n+1):
+        a=a0+(a1-a0)*i/n
+        for r,h in ((radius-width/2,z-height/2),(radius+width/2,z-height/2),
+                    (radius+width/2,z+height/2),(radius-width/2,z+height/2)):
+            vertices.append((cx+r*math.cos(a),cy+r*math.sin(a),h))
+    faces=[(3,2,1,0),tuple(4*n+j for j in range(4))]
+    for i in range(n):
+        for j in range(4):faces.append((4*i+j,4*i+(j+1)%4,4*(i+1)+(j+1)%4,4*(i+1)+j))
+    return solid(name,vertices,faces,material,.015,group)
+
+
+def front_plate(name,outline,y,depth,material,group="machine",bevel=.025):
+    # outline 为世界 XZ 多边形，沿 Y 挤出。
+    n=len(outline)
+    verts=[(x,y+d,z) for d in (-depth/2,depth/2) for x,z in outline]
+    faces=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]
+    faces.extend((i,(i+1)%n,(i+1)%n+n,i+n) for i in range(n))
+    return solid(name,verts,faces,material,bevel,group)
+
+
+def floor_plate(name,outline,z,height,material,group="floor",bevel=.008):
+    n=len(outline)
+    verts=[(x,y,z+d) for d in (-height/2,height/2) for x,y in outline]
+    faces=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]
+    faces.extend((i,(i+1)%n,(i+1)%n+n,i+n) for i in range(n))
+    return solid(name,verts,faces,material,bevel,group)
+
+
 # ---------------------------------------------------------------- 房间尺寸
 RX, RY, RH = 9.0, 7.0, 5.0     # 半宽、半深、高
 
@@ -189,26 +234,44 @@ for i in range(6):
         box(f"floor_tile_{i}_{j}", (2.984, 3.484, 0.12),
             (-7.5 + i * 3, -5.25 + j * 3.5, -0.06), M_FLOOR, bevel=0.006, group="floor")
 box("floor_base", (18.2, 14.2, 0.1), (0, 0, -0.17), M_METAL_D, bevel=0, group="floor")
-cyl("floor_disc", 2.15, 0.02, (0, 0, 0.011), M_METAL_D, verts=96, group="floor")
-cyl("floor_disc_inner", 1.98, 0.024, (0, 0, 0.015), M_FLOOR_IN, verts=96, group="floor")
-tube("track_circle", circle(0, 0, 0.026, 2.05), 0.015, M_GLOW_SOFT, group="floor")
-for sy in (-1, 1):
-    # 中央眼形标记：两条相向弧线。
-    pts = [(1.78 * math.cos(a), sy * (0.60 * math.sin(a)), 0.036)
-           for a in [i * math.pi / 64 for i in range(65)]]
-    tube(f"track_lens_{sy}", pts, 0.018, M_METAL_L, closed=False, group="floor")
-for sx in (-1, 1):
-    cx = sx * 4.25
-    pts = [(cx + (p[1]), p[0], 0.025) for p in stadium(0, 0, 0, 4.7, 1.65)]
-    box(f"floor_lane_{sx}", (4.6, 1.72, 0.024), (cx, 0, 0.014), M_FLOOR_IN, bevel=0.12, group="floor")
-    tube(f"track_groove_{sx}", pts, 0.048, M_METAL_D, group="floor")
-    tube(f"track_oval_{sx}", [(x,y,0.061) for x,y,z in pts], 0.016, M_GLOW_SOFT, group="floor")
-    for k, (x,y,z) in enumerate(pts[::4]):
-        cyl(f"track_dot_{sx}_{k}", 0.026, 0.006, (x,y,0.075), M_GLOW, verts=10, group="floor")
-    box(f"track_bridge_{sx}", (0.36, 1.3, 0.04), (sx*2.05,0,0.036), M_FLOOR_IN, bevel=0.025, group="floor")
-    for dx in (-1.2, 1.2):
-        tube(f"track_bracket_{sx}_{dx}", [(cx+dx+0.14,-0.67,0.055),(cx+dx,-0.45,0.055),
-             (cx+dx,0.45,0.055),(cx+dx+0.14,0.67,0.055)], 0.023, M_METAL_L, closed=False, group="floor")
+# 区域 6：圆形徽记与横向嵌入通道。
+cyl("floor_disc",2.15,.026,(0,0,.014),M_METAL_D,verts=128,group="floor")
+cyl("floor_disc_inner",1.94,.025,(0,0,.031),M_FLOOR_IN,verts=128,group="floor")
+annulus("floor_disc_rim",0,0,2.06,.11,.049,.025,M_BRUSHED,"floor")
+annulus("floor_emblem_border",0,0,1.69,.045,.05,.016,M_METAL_D,"floor")
+# 上方暗色弧面和下方两条内收曲线构成原图的三瓣弧形标记。
+def bezier2(p0,p1,p2,n=40):
+    return [tuple((1-t)**2*p0[j]+2*(1-t)*t*p1[j]+t*t*p2[j] for j in range(2)) for t in [i/n for i in range(n+1)]]
+top_y=.46
+start=math.asin(top_y/1.66)
+upper=[(1.66*math.cos(a),1.66*math.sin(a)) for a in [start+(math.pi-2*start)*i/60 for i in range(61)]]
+upper+=bezier2((-1.66*math.cos(start),top_y),(0,.10),(1.66*math.cos(start),top_y))
+floor_plate("floor_emblem_upper",upper,.054,.009,M_METAL_D)
+for side in (-1,1):
+    curve=bezier2((side*1.60,.36),(side*.58,-.12),(side*.61,-1.55))
+    tube(f"floor_emblem_curve_{side}",[(x,y,.061) for x,y in curve],.025,M_METAL_D,closed=False,group="floor")
+for side in (-1,1):
+    cx=side*4.35
+    box(f"floor_lane_{side}",(4.55,1.94,.026),(cx,0,.016),M_METAL_D,bevel=.08,group="floor")
+    box(f"floor_lane_inner_{side}",(4.40,1.71,.020),(cx,0,.043),M_FLOOR_IN,bevel=.065,group="floor")
+    for edge in (-1,1):
+        box(f"track_edge_{side}_{edge}",(4.43,.043,.024),(cx,edge*.93,.056),M_BRUSHED,bevel=.007,group="floor")
+        for k in range(9):
+            x=side*(2.55+k*.42)
+            box(f"track_light_{side}_{edge}_{k}",(.27,.025,.009),(x,edge*.86,.061),M_GLOW_SOFT,bevel=.004,group="floor")
+    for k,x in enumerate((side*3.60,side*5.47)):
+        shape=[(x-.47,-.74),(x-.57,-.47),(x-.57,.47),(x-.34,.75),
+               (x+.42,.75),(x+.54,.47),(x+.54,-.47),(x+.30,-.74)]
+        floor_plate(f"track_cover_groove_{side}_{k}",shape,.066,.019,M_METAL_D)
+        inner=[(x+(xx-x)*.88,yy*.88) for xx,yy in shape]
+        floor_plate(f"track_cover_{side}_{k}",inner,.083,.019,M_BRUSHED,bevel=.015)
+        tube(f"track_cover_stamp_{side}_{k}",[(x-.18,-.48,.099),(x+.24,-.32,.099),(x+.24,.32,.099),(x-.18,.48,.099)],
+             .012,M_METAL_L,closed=False,group="floor")
+    for edge in (-1,1):
+        for k in range(3):
+            a=(.24+k*.085)*edge+(0 if side==1 else math.pi)
+            cyl(f"floor_disc_light_{side}_{edge}_{k}",.043,.008,
+                (2.04*math.cos(a),2.04*math.sin(a),.067),M_GLOW_SOFT,verts=16,group="floor")
 
 # ---------------------------------------------------------------- 墙
 def wall(name, size, loc, rot=(0, 0, 0)):
@@ -249,31 +312,45 @@ for i in range(-4, 5):
     box(f"pipe_clamp_{i}", (0.22, 0.12, 0.42), (i * 2.0 + 1.0, RY - 0.27, 0.9), M_DARK, bevel=0.01, group="wall")
 
 tube("wall_bend_pipe", [(-RX + 0.3, 2.0, 3.9), (-RX + 0.3, 3.5, 3.9), (-RX + 0.3, 4.6, 4.2), (-RX + 0.3, 5.6, 4.35), (-RX + 0.8, 6.4, 4.35), (-RX + 1.6, RY - 0.3, 4.2)], 0.17, M_METAL, closed=False, group="wall")
-# ---------------------------------------------------------------- 终端区（后墙中央）
+# ---------------------------------------------------------------- 区域 5：厚框诊断终端，与两层深色台阶形成整组。
 TY = RY - 1.4
-box("platform_0", (4.6, 2.5, 0.14), (0, TY, 0.07), M_METAL_D, bevel=0.03, group="terminal")
-box("platform_1", (4.0, 1.95, 0.14), (0, TY+0.25, 0.21), M_METAL_D, bevel=0.03, group="terminal")
-for sx in (-1, 1):
-    box(f"platform_rail_{sx}", (0.4, 2.6, 0.3), (sx*2.25, TY, 0.15), M_BRUSHED, bevel=0.04, group="terminal")
-    box(f"platform_marker_{sx}", (0.2, 0.18, 0.012), (sx*2.25, TY-1.1, 0.307), M_GLOW_SOFT, group="terminal")
-# 屏幕与框
-box("screen_frame", (4.3, 0.22, 2.65), (0, RY - 0.18, 3.2), M_METAL_D, bevel=0.05, group="terminal")
-# 独立平面保留完整 0..1 UV，避免立方体 UV 把 HUD 裁切。
-bpy.ops.mesh.primitive_plane_add(size=2, location=(0, RY-0.31, 3.2), rotation=(math.pi/2,0,0))
-screen = bpy.context.active_object
-screen.scale = (1.96, 1.16, 1)
-_finish(screen, "screen_surface", M_SCREEN, 0, "terminal")
-box("screen_glow_l", (0.03, 0.05, 2.35), (-2.1, RY - 0.3, 3.2), M_GLOW, bevel=0, group="terminal")
-box("screen_glow_r", (0.03, 0.05, 2.35), (2.1, RY - 0.3, 3.2), M_GLOW, bevel=0, group="terminal")
-# 台阶上方的薄控制面板。
-box("console_body", (2.9, 0.5, 0.22), (0, TY+0.5, 0.4), M_METAL_D, bevel=0.04, group="terminal")
-for i in range(-3, 4):
-    box(f"console_key_{i}", (0.25,0.16,0.018), (i*0.36,TY+0.4,0.52), M_GLOW_SOFT, group="terminal")
+box("terminal_backplate",(4.36,.22,4.42),(0,RY-.16,2.40),M_WALL,bevel=.12,group="terminal")
+for side in (-1,1):
+    box(f"terminal_back_reveal_{side}",(.12,.08,3.90),(side*2.03,RY-.30,2.48),M_BRUSHED,bevel=.02,group="terminal")
+box("terminal_header",(4.56,.24,.18),(0,RY-.24,4.65),M_BRUSHED,bevel=.035,group="terminal")
+box("platform_0",(4.6,2.5,.14),(0,TY,.07),M_METAL_D,bevel=.025,group="terminal")
+box("platform_1",(4.0,1.95,.14),(0,TY+.25,.21),M_WALL_D,bevel=.025,group="terminal")
+for side in (-1,1):
+    # 外侧斜装甲仍在既有扶轨碰撞盒内。
+    box(f"platform_rail_{side}",(.40,2.6,.30),(side*2.25,TY,.15),M_METAL_D,bevel=.05,group="terminal")
+    box(f"platform_marker_{side}",(.18,.17,.014),(side*2.25,TY-1.12,.31),M_BRUSHED,bevel=.012,group="terminal")
+for y,z,w in ((TY-1.25,.14,4.15),(TY-.725,.28,3.75)):
+    box(f"platform_nosing_{z}",(w,.06,.028),(0,y+.02,z),M_BRUSHED,bevel=.008,group="terminal")
+# 屏幕中心降低，外壳的厚圆角侧翼包住内侧深蓝面板。
+SZ=2.57
+box("screen_outer_housing",(3.75,.42,2.85),(0,RY-.46,SZ),M_BRUSHED,bevel=.19,group="terminal")
+box("screen_dark_gasket",(3.39,.08,2.48),(0,RY-.71,SZ),M_METAL_D,bevel=.17,group="terminal")
+box("screen_inner_rim",(3.20,.06,2.30),(0,RY-.77,SZ),M_BLUE,bevel=.13,group="terminal")
+bpy.ops.mesh.primitive_plane_add(size=2,location=(0,RY-.815,SZ),rotation=(math.pi/2,0,0))
+screen=bpy.context.active_object
+screen.scale=(1.51,1.07,1)
+_finish(screen,"screen_surface",M_SCREEN,0,"terminal")
+for side in (-1,1):
+    box(f"screen_side_mount_{side}",(.13,.30,1.28),(side*1.93,RY-.46,SZ),M_METAL_D,bevel=.055,group="terminal")
+    for z in (SZ-.39,SZ+.39):
+        box(f"screen_side_grip_{side}_{z}",(.16,.13,.27),(side*1.93,RY-.65,z),M_METAL_L,bevel=.03,group="terminal")
+box("screen_top_light",(2.70,.06,.055),(0,RY-.695,SZ+1.40),M_GLOW_SOFT,bevel=.015,group="terminal")
+box("screen_bottom_lip",(2.90,.24,.12),(0,RY-.70,1.12),M_METAL_L,bevel=.035,group="terminal")
+# 紧接屏幕的矮控制台，保留原可行走台阶高度。
+box("console_body",(2.90,.50,.48),(0,TY+.50,.53),M_METAL_D,bevel=.06,group="terminal")
+box("console_status",(1.10,.10,.045),(0,TY+.28,.79),M_GLOW_SOFT,bevel=.015,group="terminal")
+for k in range(4):
+    box(f"console_vent_{k}",(2.5,.017,.026),(0,TY+.237,.36+k*.085),M_DARK,bevel=.008,group="terminal")
 for x in (-3.9,-3.65):
-    tube(f"pipe_back_vertical_{x}", [(x,6.6,5),(x,6.6,3.8),(x+0.3,6.6,3.3),(x+0.3,6.6,1)],
-         0.075, M_METAL_D, closed=False, group="wall")
-collider(0, TY, 2.4)
-light(0, RY - 2.2, 2.6, CYAN, 28, 9)
+    tube(f"pipe_back_vertical_{x}",[(x,6.6,5),(x,6.6,3.8),(x+.3,6.6,3.3),(x+.3,6.6,1)],
+         .075,M_METAL_D,closed=False,group="wall")
+collider(0,TY,2.4)
+light(0,RY-2.2,2.6,CYAN,28,9)
 
 # ---------------------------------------------------------------- NONO 大舱（前左，参考图区域 1）
 # 轮廓分成玻璃罩、粗分段环管、深色机械基座与六边形外护沿。
@@ -438,147 +515,212 @@ META["animated"]["nono0"]={"x":PX,"y":PY,"z":2.43*POD_HEIGHT_SCALE}
 collider(PX,PY,POD_FOOTPRINT)
 light(PX,PY,2.35*POD_HEIGHT_SCALE,CYAN,22,6)
 
-# ---------------------------------------------------------------- 全息投影底座（前中偏左）
-HX, HY = -1.7, -3.3
-cyl("holo_base", 0.75, 0.09, (HX,HY,0.045), M_METAL_D, verts=6, bevel=0.018, group="holo")
-cyl("holo_base_top", 0.56, 0.015, (HX,HY,0.1), M_DARK, verts=6, group="holo")
-torus("holo_base_glow", 0.43, 0.015, (HX,HY,0.115), M_GLOW_SOFT, group="holo")
-HZ = 0.78
-cyl("holo_beam", 0.46, 0.92, (HX,HY,0.57), M_BEAM, verts=32, r2=0.3, group="holo")
-sph("holo_man_head", 0.12, (HX,HY,HZ+0.25), M_HOLO, group="holo")
-cyl("holo_man_body", 0.14, 0.35, (HX,HY,HZ), M_HOLO, verts=16, r2=0.09, group="holo")
+# ---------------------------------------------------------------- 区域 4：分瓣投影底座与青色机器人投影
+HX, HY = -2.35, -3.55
+cyl("holo_base",.75,.12,(HX,HY,.06),M_METAL_D,verts=12,bevel=.035,group="holo")
+for k in range(8):
+    a=k*math.tau/8
+    annulus(f"holo_base_petal_{k}",HX,HY,.58,.28,.20,.22,M_BRUSHED,"holo",a+.035,a+math.tau/8-.035)
+    if k%2==0:
+        box(f"holo_base_clamp_{k}",(.16,.23,.24),(HX+.70*math.cos(a),HY+.70*math.sin(a),.16),
+            M_METAL_D,bevel=.025,rot=(0,0,a),group="holo")
+cyl("holo_emitter",.45,.04,(HX,HY,.28),M_BLUE,verts=48,group="holo")
+torus("holo_emitter_ring",.40,.02,(HX,HY,.307),M_GLOW_SOFT,group="holo")
+cyl("holo_beam",.41,.94,(HX,HY,.79),M_BEAM,verts=48,r2=.21,group="holo")
+HZ=.85
+sph("holo_man_head",.175,(HX,HY,HZ+.27),M_HOLO,scale=(1,.84,1),group="holo")
+sph("holo_man_visor",.13,(HX,HY-.108,HZ+.285),M_BEAM,scale=(1,.45,.55),group="holo")
+cyl("holo_man_body",.13,.28,(HX,HY,HZ-.02),M_HOLO,verts=20,r2=.18,bevel=.025,group="holo")
+for side in (-1,1):
+    tube(f"holo_man_arm_{side}",[(HX+side*.17,HY,HZ+.08),(HX+side*.26,HY,HZ+(.19 if side==-1 else -.02)),
+        (HX+side*.28,HY-.02,HZ+(.36 if side==-1 else -.13))],.046,M_HOLO,closed=False,group="holo")
+    cyl(f"holo_man_leg_{side}",.056,.20,(HX+side*.085,HY,HZ-.24),M_HOLO,verts=16,group="holo")
+    sph(f"holo_man_foot_{side}",.075,(HX+side*.09,HY-.035,HZ-.35),M_HOLO,scale=(.8,1.3,.5),group="holo")
 for k in range(3):
-    torus(f"holo_scan_{k}", 0.28, 0.008, (HX,HY,0.4+k*0.24), M_GLOW_SOFT, group="holo")
-META["animated"]["holo_icon"] = {"x": HX, "y": HY, "z": HZ}
-collider(HX, HY, 0.8)
-light(HX, HY, 1.3, CYAN, 12, 4)
+    torus(f"holo_scan_{k}",.26,.006,(HX,HY,.47+k*.27),M_GLOW_SOFT,group="holo")
+META["animated"]["holo_icon"]={"x":HX,"y":HY,"z":HZ}
+collider(HX,HY,.80)
+light(HX,HY,1.3,CYAN,12,4)
 
-# ---------------------------------------------------------------- 弧形大型设备（前右）
-CX_, CY_ = 8.5, -2.7
-# 竖直圆弧外壳：截面绕 Y 轴展开，内侧朝向房间中央。
-def arch_segment(name, a0, a1, inner, outer, depth, m):
-    verts=[]
-    steps=10
+# ---------------------------------------------------------------- 区域 8：完整弧形设备，内部有实体机身而非空拱门。
+CX_, CY_ = 8.65, -1.45
+
+def curve_piece(name,a0,a1,inner,outer,depth,material,yoffset=0):
+    steps=max(6,int((a1-a0)/3)); verts=[]
     for y in (-depth/2,depth/2):
         for r in (inner,outer):
             for i in range(steps+1):
                 a=math.radians(a0+(a1-a0)*i/steps)
-                verts.append((CX_-r*math.cos(a),CY_+y,0.2+r*math.sin(a)))
+                verts.append((CX_-r*math.cos(a),CY_+y+yoffset,.14+1.30*r*math.sin(a)))
     n=steps+1
     faces=[]
     for i in range(steps):
         for u,v in ((0,n),(2*n,3*n),(0,2*n),(n,3*n)):
             faces.append((u+i,u+i+1,v+i+1,v+i))
-    faces += [(0,n,3*n,2*n),(n-1,2*n-1,4*n-1,3*n-1)]
-    mesh=bpy.data.meshes.new(name)
-    mesh.from_pydata(verts,[],faces)
-    mesh.update()
-    o=bpy.data.objects.new(name,mesh)
-    bpy.context.collection.objects.link(o)
-    _finish(o,name,m,0.045,"curve")
-    # 网格顶点顺序统一，保证从房间内侧看也正确受光。
-    bpy.context.view_layer.objects.active=o
-    o.select_set(True)
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.mesh.normals_make_consistent(inside=False)
-    bpy.ops.object.mode_set(mode="OBJECT")
-    o.select_set(False)
+    faces.extend([(0,n,3*n,2*n),(n-1,2*n-1,4*n-1,3*n-1)])
+    return solid(name,verts,faces,material,.035,"curve")
 
-for k in range(4):
-    a0,a1=8+k*21,28+k*21
-    arch_segment(f"curve_shell_{k}",a0,a1,2.5,3.25,2.1,M_BRUSHED)
-    arch_segment(f"curve_seam_{k}",a1,a1+1,2.49,3.27,2.13,M_METAL_D)
-    a=math.radians((a0+a1)/2)
-    x,z=CX_-2.88*math.cos(a),0.2+2.88*math.sin(a)
-    box(f"curve_panel_frame_{k}",(0.55,0.11,0.63),(x,CY_-1.10,z),M_METAL_D,bevel=0.04,rot=(0,a,0),group="curve")
-    box(f"curve_panel_{k}",(0.38,0.03,0.44),(x,CY_-1.17,z),M_BLUE,bevel=0.025,rot=(0,a,0),group="curve")
-    box(f"curve_panel_light_{k}",(0.28,0.02,0.055),(x,CY_-1.20,z+0.10),M_GLOW_SOFT,rot=(0,a,0),group="curve")
-    cyl(f"curve_port_rim_{k}",0.22,0.12,(x,CY_+1.12,z),M_METAL_L,verts=32,rot=(math.pi/2,0,0),group="curve")
-    cyl(f"curve_port_{k}",0.16,0.13,(x,CY_+1.19,z),M_BLUE,verts=32,rot=(math.pi/2,0,0),group="curve")
-    px,pz=CX_-3.12*math.cos(a),0.2+3.12*math.sin(a)
-    cyl(f"curve_front_rim_{k}",0.13,0.05,(px,CY_-1.11,pz),M_METAL_L,verts=32,rot=(math.pi/2,0,0),group="curve")
-    cyl(f"curve_front_port_{k}",0.09,0.055,(px,CY_-1.15,pz),M_BLUE,verts=32,rot=(math.pi/2,0,0),group="curve")
-box("curve_foot",(0.85,2.25,0.5),(5.65,CY_,0.25),M_METAL_D,bevel=0.1,group="curve")
-for x in (6.2,7.3,8.2):
-    collider(x,CY_,1.15)
+# 中央机身使用很小但非零内径，配竖向背脊封闭；避免轴心退化三角面。
+curve_piece("curve_solid_core",0,90,.09,2.86,2.32,M_METAL_D)
+box("curve_backbone",(.32,2.35,3.77),(CX_-.02,CY_,1.98),M_BRUSHED,bevel=.10,group="curve")
+box("curve_plinth",(3.05,2.53,.22),(CX_-1.36,CY_,.13),M_METAL_D,bevel=.09,group="curve")
+for k in range(5):
+    a0,a1=1+k*17.5,17.5+k*17.5
+    curve_piece(f"curve_outer_armor_{k}",a0,a1,2.66,2.97,2.45,M_BRUSHED)
+    curve_piece(f"curve_front_plate_{k}",a0+.8,a1-.8,.27,2.64,.16,M_METAL,yoffset=-1.24)
+    curve_piece(f"curve_armor_gasket_{k}",a1,a1+.9,.24,2.97,.04,M_DARK,yoffset=-1.335)
+for k,deg in enumerate((35,55,75)):
+    a=math.radians(deg)
+    x,z=CX_-2.57*math.cos(a),.14+1.30*2.57*math.sin(a)
+    box(f"curve_panel_frame_{k}",(.47,.13,.55),(x,CY_-1.36,z),M_METAL_D,bevel=.045,rot=(0,-a*.7,0),group="curve")
+    box(f"curve_panel_{k}",(.32,.035,.38),(x,CY_-1.445,z),M_BLUE,bevel=.035,rot=(0,-a*.7,0),group="curve")
+    box(f"curve_panel_light_{k}",(.19,.018,.045),(x,CY_-1.472,z+.10),M_GLOW_SOFT,bevel=.01,rot=(0,-a*.7,0),group="curve")
+# 实体机壳上的三只圆鼓形模块，深蓝嵌口和独立接缝。
+for k,z in enumerate((.82,1.80,2.78)):
+    x=CX_-.43
+    cyl(f"curve_drum_mount_{k}",.49,.17,(x,CY_-1.38,z),M_METAL_D,rot=(math.pi/2,0,0),verts=48,bevel=.025,group="curve")
+    sph(f"curve_drum_{k}",.445,(x,CY_-1.50,z),M_BRUSHED,scale=(1,.58,1),seg=48,group="curve")
+    torus(f"curve_drum_seal_{k}",.40,.024,(x,CY_-1.53,z),M_METAL_D,rot=(math.pi/2,0,0),group="curve")
+    cyl(f"curve_drum_insert_{k}",.16,.028,(x-.10,CY_-1.751,z+.06),M_BLUE,rot=(math.pi/2,0,0),verts=32,group="curve")
+box("curve_lower_access",(.56,.11,.60),(6.65,CY_-1.36,1.01),M_BRUSHED,bevel=.06,rot=(0,-.35,0),group="curve")
+box("curve_lower_access_blue",(.34,.025,.37),(6.65,CY_-1.43,1.01),M_BLUE,bevel=.025,rot=(0,-.35,0),group="curve")
+for x in (6.85,8.0):collider(x,CY_,1.42)
 light(6.4,CY_-1,1.5,CYAN,18,5)
+# 原图右前独立小设备。
+UX,UY=4.90,-3.60
+cyl("utility_foot",.72,.13,(UX,UY,.065),M_BRUSHED,verts=64,bevel=.025,group="utility")
+cyl("utility_base",.62,.22,(UX,UY,.23),M_METAL_D,verts=12,r2=.49,bevel=.03,group="utility")
+for k in range(8):
+    a=k*math.tau/8
+    box(f"utility_base_readout_{k}",(.035,.18,.10),(UX+.56*math.cos(a),UY+.56*math.sin(a),.26),M_BLUE,
+        bevel=.014,rot=(0,-.22,a),group="utility")
+cyl("utility_neck",.30,.25,(UX,UY,.45),M_BRUSHED,verts=24,group="utility")
+box("utility_head",(.61,.57,.54),(UX,UY,.80),M_METAL_D,bevel=.10,rot=(0,.15,-.15),group="utility")
+box("utility_front_screen",(.34,.035,.30),(UX,UY-.30,.81),M_BLUE,bevel=.03,group="utility")
+box("utility_top_lamp",(.17,.51,.05),(UX-.06,UY,1.09),M_GLOW_SOFT,bevel=.02,group="utility")
+for side in (-1,1):
+    box(f"utility_cheek_{side}",(.10,.44,.38),(UX+side*.32,UY,.83),M_BRUSHED,bevel=.045,group="utility")
+collider(UX,UY,.76)
 
-# ---------------------------------------------------------------- 后左设备：矮圆机 + 高个传感机
-SX_, SY_ = -6.7, 4.6
-cyl("squat_body", 0.95, 1.3, (SX_, SY_, 0.65), M_METAL, bevel=0.04, verts=48, group="machine")
-cyl("squat_cap", 1.0, 0.18, (SX_, SY_, 1.39), M_METAL_L, verts=48, group="machine")
-torus("squat_top_glow", 0.72, 0.07, (SX_, SY_, 1.5), M_GLOW, group="machine")
-cyl("squat_core", 0.55, 0.06, (SX_, SY_, 1.49), M_GLOW_SOFT, verts=48, group="machine")
-for k in range(6):
-    torus(f"squat_band_{k}", 0.97, 0.03, (SX_, SY_, 0.25 + k * 0.19), M_METAL_D, group="machine")
-cyl("squat_pipe", 0.17, 3.2, (SX_ - 0.3, RY - 0.45, 1.6), M_METAL, verts=24, rot=(0, 0, 0), group="machine")
-cyl("squat_pipe_h", 0.17, 1.9, (SX_ - 0.3, SY_ + 0.9, 2.55), M_METAL, verts=24, rot=(math.pi / 2, 0, 0), group="machine")
-collider(SX_, SY_, 1.1)
-
-TX_, TY_ = -4.1, 5.1
-cyl("tall_base",0.82,0.28,(TX_,TY_,0.14),M_METAL_D,verts=48,group="machine")
-cyl("tall_base_glow",0.68,0.16,(TX_,TY_,0.32),M_GLOW_SOFT,verts=48,group="machine")
-cyl("tall_column",0.43,0.95,(TX_,TY_,0.88),M_METAL,verts=32,group="machine")
-cyl("tall_head",0.47,1.25,(TX_,TY_,1.75),M_BRUSHED,verts=48,bevel=0.06,rot=(0,math.pi/2,0),group="machine")
-for sx in (-1,1):
-    cyl(f"tall_head_cap_{sx}",0.40,0.1,(TX_+sx*0.67,TY_,1.75),M_METAL_D,verts=32,rot=(0,math.pi/2,0),group="machine")
-    box(f"tall_leg_{sx}",(0.22,0.5,0.8),(TX_+sx*0.55,TY_,0.7),M_METAL_D,rot=(0,sx*0.25,0),group="machine")
-box("tall_status",(0.38,0.035,0.24),(TX_,TY_-0.45,0.94),M_GLOW_SOFT,group="machine")
-collider(TX_,TY_,0.9)
+# ---------------------------------------------------------------- 区域 2：开口发光圆柱
+SX_, SY_ = -5.8, 4.65
+cyl("squat_foot",1.06,.15,(SX_,SY_,.075),M_METAL_D,verts=64,bevel=.025,group="machine")
+cyl("squat_lower",.98,.93,(SX_,SY_,.60),M_METAL_D,verts=12,bevel=.035,group="machine")
+for k in range(8):
+    a=k*math.tau/8
+    annulus(f"squat_armor_{k}",SX_,SY_,1.00,.10,.61,.78,M_BRUSHED,"machine",a+.035,a+math.tau/8-.035)
+    if k in (4,7):
+        box(f"squat_lower_lamp_{k}",(.045,.21,.26),
+            (SX_+1.06*math.cos(a),SY_+1.06*math.sin(a),.46),M_GLOW_SOFT,
+            rot=(0,.15,a),bevel=.025,group="machine")
+annulus("squat_waist",SX_,SY_,.98,.12,1.08,.13,M_METAL_D,"machine")
+cyl("squat_slot_recess",.86,.62,(SX_,SY_,1.44),M_DARK,verts=64,group="machine")
+for k in range(16):
+    a=k*math.tau/16
+    box(f"squat_lamp_slot_{k}",(.08,.11,.38),(SX_+.872*math.cos(a),SY_+.872*math.sin(a),1.46),
+        M_GLOW_SOFT,rot=(0,0,a),bevel=.018,group="machine")
+for k in range(8):
+    a=k*math.tau/8
+    box(f"squat_upper_rib_{k}",(.13,.10,.75),(SX_+.97*math.cos(a),SY_+.97*math.sin(a),1.47),
+        M_METAL_D,rot=(0,0,a),bevel=.025,group="machine")
+annulus("squat_upper_shoulder",SX_,SY_,.93,.27,1.86,.27,M_BRUSHED,"machine")
+annulus("squat_aperture_dark",SX_,SY_,.82,.12,2.02,.13,M_METAL_D,"machine")
+torus("squat_aperture_light",.76,.055,(SX_,SY_,2.10),M_GLOW,group="machine")
+cyl("squat_aperture_well",.73,.10,(SX_,SY_,1.86),M_BLUE,verts=64,group="machine")
+box("squat_display_frame",(.70,.15,.48),(SX_,SY_-1.0,.67),M_METAL_D,bevel=.07,group="machine")
+box("squat_display",(.56,.02,.34),(SX_,SY_-1.09,.67),M_BLUE,bevel=.035,group="machine")
+for k in (-1,1):
+    torus(f"squat_display_glyph_{k}",.088,.012,(SX_+k*.135,SY_-1.112,.69),M_GLOW_SOFT,rot=(math.pi/2,0,0),ms=24,mn=8,group="machine")
+box("squat_display_readout",(.33,.012,.018),(SX_,SY_-1.114,.56),M_GLOW_SOFT,bevel=0,group="machine")
+for dx in (-.26,.26):
+    tube(f"squat_back_hose_{dx}",[(SX_+dx,SY_+.5,1.8),(SX_+dx,SY_+.9,2.35),
+        (SX_+dx,SY_+1.4,2.65),(SX_+dx,SY_+1.75,2.65)],.075,M_METAL_D,closed=False,group="machine")
+collider(SX_,SY_,1.12)
 light(SX_,SY_,2.2,CYAN,18,6)
 
-# ---------------------------------------------------------------- 玻璃培养管（后右）
-def containment_tube(idx, x, y, with_nono):
-    cyl(f"tube{idx}_base", 0.95, 0.35, (x, y, 0.175), M_METAL_D, bevel=0.03, verts=48, group="tube")
-    cyl(f"tube{idx}_base2", 0.82, 0.18, (x, y, 0.44), M_METAL, verts=48, group="tube")
-    torus(f"tube{idx}_base_glow", 0.8, 0.04, (x, y, 0.55), M_GLOW, group="tube")
-    cyl(f"tube{idx}_glass_smooth", 0.74, 3.5, (x, y, 2.3), M_GLASS_T, verts=48, group="tube")
-    cyl(f"tube{idx}_cap", 0.9, 0.3, (x, y, 4.2), M_METAL, bevel=0.03, verts=48, group="tube")
-    torus(f"tube{idx}_cap_glow", 0.8, 0.04, (x, y, 4.04), M_GLOW, group="tube")
-    for k in range(4):
-        a = k / 4 * 2 * math.pi + 0.4
-        cyl(f"tube{idx}_rod_{k}", 0.025, 3.5, (x + 0.76 * math.cos(a), y + 0.76 * math.sin(a), 2.3), M_METAL_L,
-            verts=10, group="tube")
-    box(f"tube{idx}_readout_frame",(0.62,0.12,0.25),(x,y-0.92,0.25),M_METAL,group="tube")
-    box(f"tube{idx}_readout",(0.48,0.025,0.14),(x,y-0.99,0.27),M_BLUE,group="tube")
-    for k in range(3):
-        box(f"tube{idx}_readout_line{k}",(0.3-k*0.055,0.01,0.015),(x,y-1.01,0.23+k*0.045),M_GLOW_SOFT,group="tube")
+# ---------------------------------------------------------------- 区域 3：横筒机械单元
+TX_, TY_ = -3.6, 5.05
+cyl("tall_foot",1.08,.15,(TX_,TY_,.075),M_METAL_D,verts=12,bevel=.035,group="machine")
+cyl("tall_reactor",1.02,1.12,(TX_,TY_,.68),M_METAL_D,verts=12,r2=.66,bevel=.04,group="machine")
+for side in (-1,1):
+    outline=[(TX_+side*.43,.20),(TX_+side*1.02,.22),(TX_+side*.83,1.12),(TX_+side*.52,1.27)]
+    front_plate(f"tall_sloping_armor_{side}",outline,TY_-.40,.63,M_BRUSHED,bevel=.05)
+    for j in range(3):
+        box(f"tall_armor_light_{side}_{j}",(.035,.02,.045),
+            (TX_+side*(.76-j*.06),TY_-.728,.43+j*.17),M_GLOW_SOFT,bevel=.008,group="machine")
+front_plate("tall_front_lamp",[(TX_-.48,.19),(TX_+.48,.19),(TX_+.37,.44),(TX_-.37,.44)],
+            TY_-.88,.07,M_GLOW_SOFT,bevel=.04)
+cyl("tall_socket_collar",.34,.13,(TX_,TY_-.88,.82),M_BRUSHED,verts=48,rot=(math.pi/2,0,0),bevel=.025,group="machine")
+cyl("tall_socket_center",.24,.15,(TX_,TY_-.96,.82),M_BLUE,verts=48,rot=(math.pi/2,0,0),group="machine")
+torus("tall_socket_light",.18,.025,(TX_,TY_-1.05,.82),M_GLOW_SOFT,rot=(math.pi/2,0,0),group="machine")
+box("tall_socket_bar",(.22,.025,.06),(TX_,TY_-1.08,.83),M_METAL_L,bevel=.01,group="machine")
+cyl("tall_rotary_neck",.51,.22,(TX_,TY_,1.34),M_METAL,verts=48,bevel=.025,group="machine")
+box("tall_head_cradle",(1.25,.69,.23),(TX_,TY_,1.53),M_METAL_D,bevel=.07,group="machine")
+cyl("tall_head",.48,1.38,(TX_,TY_,2.02),M_BRUSHED,verts=64,bevel=.065,rot=(0,math.pi/2,0),group="machine")
+for side in (-1,1):
+    cyl(f"tall_head_cap_{side}",.41,.10,(TX_+side*.73,TY_,2.02),M_METAL_D,verts=48,rot=(0,math.pi/2,0),bevel=.025,group="machine")
+    cyl(f"tall_head_pivot_{side}",.23,.16,(TX_+side*.82,TY_,2.02),M_BRUSHED,verts=32,rot=(0,math.pi/2,0),bevel=.025,group="machine")
+box("tall_head_handle",(.76,.20,.09),(TX_,TY_,2.53),M_METAL_D,bevel=.035,group="machine")
+box("tall_head_lower_accent",(.97,.035,.085),(TX_,TY_-.40,1.79),M_BLUE,bevel=.025,group="machine")
+collider(TX_,TY_,1.15)
+
+# ---------------------------------------------------------------- 区域 7：机械顶底座培养管，左管爪与 NONO 同舱。
+def containment_tube(idx,x,y,with_nono):
+    cyl(f"tube{idx}_foot",1.08,.15,(x,y,.075),M_BRUSHED,verts=64,bevel=.03,group="tube")
+    cyl(f"tube{idx}_base",1.02,.32,(x,y,.31),M_METAL_D,verts=12,bevel=.04,group="tube")
+    annulus(f"tube{idx}_lower_collar",x,y,.94,.18,.57,.20,M_BRUSHED,"tube")
+    torus(f"tube{idx}_lower_light",.84,.022,(x,y,.68),M_GLOW_SOFT,group="tube")
+    cyl(f"tube{idx}_inner_deck",.82,.035,(x,y,.58),M_BLUE,verts=64,group="tube")
+    cyl(f"tube{idx}_glass_smooth",.86,3.62,(x,y,2.49),M_GLASS_T,verts=64,group="tube")
+    annulus(f"tube{idx}_top_collar",x,y,.94,.18,4.36,.26,M_BRUSHED,"tube")
+    cyl(f"tube{idx}_upper_housing",1.02,.38,(x,y,4.62),M_METAL_D,verts=12,bevel=.045,group="tube")
+    cyl(f"tube{idx}_cap",1.06,.13,(x,y,4.87),M_BRUSHED,verts=64,bevel=.035,group="tube")
+    torus(f"tube{idx}_top_light",.84,.022,(x,y,4.22),M_GLOW_SOFT,group="tube")
+    # 承力结构移到后侧，让前方玻璃与内部装置完整可见。
+    for side in (-1,1):
+        box(f"tube{idx}_rear_spine_{side}",(.13,.18,3.73),(x+side*.73,y+.51,2.46),M_METAL_D,bevel=.035,group="tube")
+        for z in (1.35,3.40):
+            box(f"tube{idx}_spine_coupling_{side}_{z}",(.19,.23,.19),(x+side*.73,y+.51,z),M_BRUSHED,bevel=.025,group="tube")
+    for k in range(10):
+        a=k*math.tau/10
+        box(f"tube{idx}_housing_inset_{k}",(.035,.11,.16),(x+1.023*math.cos(a),y+1.023*math.sin(a),4.62),
+            M_BRUSHED,rot=(0,0,a),bevel=.014,group="tube")
     if with_nono:
-        box(f"tube{idx}_console", (1.0, 0.55, 0.5), (x - 1.35, y - 1.05, 0.5), M_METAL_D, bevel=0.04, group="tube")
-        box(f"tube{idx}_screen", (0.8, 0.04, 0.35), (x - 1.35, y - 1.31, 0.6), M_SCREEN, bevel=0, rot=(math.radians(-25), 0, 0), group="tube")
-        build_nono('nono2', (x,y,1.65), scale=.95, pitch=-.24)
-        META["animated"]["nono2"]={"x":x,"y":y,"z":1.65}
-    else:
-        cyl(f"claw{idx}_hub",0.25,0.45,(x,y,3.0),M_METAL_D,verts=24,group="tube")
-        torus(f"claw{idx}_ring",0.27,0.025,(x,y,3.12),M_GLOW_SOFT,group="tube")
+        cyl(f"claw{idx}_suspension",.17,.49,(x,y,4.10),M_BRUSHED,verts=24,group="tube")
+        cyl(f"claw{idx}_hub",.31,.43,(x,y,3.70),M_METAL_D,verts=8,bevel=.03,group="tube")
+        torus(f"claw{idx}_ring",.30,.027,(x,y,3.83),M_GLOW_SOFT,group="tube")
         for k in range(3):
-            a=k*math.tau/3
-            pts=[(x+0.23*math.cos(a),y+0.23*math.sin(a),3.05),
-                 (x+0.49*math.cos(a),y+0.49*math.sin(a),2.65),
-                 (x+0.39*math.cos(a),y+0.39*math.sin(a),2.2),
-                 (x+0.17*math.cos(a),y+0.17*math.sin(a),2.02)]
-            tube(f"claw{idx}_finger{k}",pts,0.085,M_BRUSHED,closed=False,group="tube")
-        sph(f"claw{idx}_core",0.16,(x,y,2.48),M_BLUE,group="tube")
-    collider(x, y, 1.0)
+            a=-math.pi/2+k*math.tau/3
+            pts=[(x+.28*math.cos(a),y+.28*math.sin(a),3.77),
+                 (x+.58*math.cos(a),y+.58*math.sin(a),3.24),
+                 (x+.43*math.cos(a),y+.43*math.sin(a),2.76),
+                 (x+.21*math.cos(a),y+.21*math.sin(a),2.55)]
+            tube(f"claw{idx}_finger_{k}",pts,.075,M_BRUSHED,closed=False,group="tube")
+            sph(f"claw{idx}_joint_{k}",.12,pts[1],M_METAL_D,seg=20,group="tube")
+        build_nono('nono2',(x,y,1.68),scale=.95,pitch=-.24)
+        META["animated"]["nono2"]={"x":x,"y":y,"z":1.68}
+        # 读数台位于正前方，屏幕完整呈现诊断纹理。
+        box(f"tube{idx}_console",(.86,.55,.79),(x,y-1.18,.395),M_METAL_D,bevel=.05,group="tube")
+        box(f"tube{idx}_console_top",(.90,.57,.12),(x,y-1.18,.82),M_BRUSHED,bevel=.04,group="tube")
+        box(f"tube{idx}_console_screen",(.66,.027,.30),(x,y-1.468,.63),M_BLUE,bevel=.025,group="tube")
+        for j in range(3):
+            box(f"tube{idx}_console_line_{j}",(.42-j*.07,.012,.022),(x,y-1.49,.57+j*.058),M_GLOW_SOFT,bevel=.006,group="tube")
+        collider(x,y-1.18,.55)
+    else:
+        # 右管在参考图中被设备遮挡，只补扫描层，不新增角色。
+        for k,z in enumerate((1.33,2.15,3.02)):
+            cyl(f"tube{idx}_scan_layer_{k}",.60,.016,(x,y,z),M_BEAM,verts=48,group="tube")
+            torus(f"tube{idx}_scan_ring_{k}",.59,.012,(x,y,z),M_GLOW_SOFT,group="tube")
+    collider(x,y,1.08)
 
-
-containment_tube(1, 4.7, 5.0, True)
-containment_tube(2, 7.0, 4.9, False)
-light(5.8, 4.8, 2.6, CYAN, 22, 7)
+containment_tube(1,4.70,5.00,True)
+containment_tube(2,7.12,4.92,False)
+light(5.8,4.8,2.6,CYAN,22,7)
 
 # ---------------------------------------------------------------- 中央悬浮 NONO
 # 轻微侧倾复刻特写中左翼近水平、右翼上扬的投影。
-build_nono('nono1', (-2.9,3.5,1.12), scale=.95, yaw=.18, bank=-.34, pitch=-.24)
-META["animated"]["nono1"]={"x":-2.9,"y":3.5,"z":1.12}
-
-# ---------------------------------------------------------------- 右侧墙边的小设备
-# 左侧旧占位柜位于扩大的大舱检修区内，随区域 1 重建移除。
-for sx in (1,):
-    box(f"side_cab_{sx}", (0.9, 2.2, 1.1), (sx * (RX - 0.55), 0.5 * sx, 0.55), M_METAL_D, bevel=0.04, group="side")
-    box(f"side_cab_top_{sx}", (0.95, 2.25, 0.1), (sx * (RX - 0.55), 0.5 * sx, 1.15), M_METAL_L, bevel=0.03, group="side")
-    box(f"side_cab_glow_{sx}", (0.04, 1.8, 0.08), (sx * (RX - 1.02), 0.5 * sx, 0.9), M_GLOW, bevel=0, group="side")
-    collider(sx * (RX - 0.55), 0.5 * sx, 1.3)
+build_nono('nono1', (-2.40,3.15,1.12), scale=.95, yaw=.18, bank=-.34, pitch=-.24)
+META["animated"]["nono1"]={"x":-2.40,"y":3.15,"z":1.12}
 
 # ---------------------------------------------------------------- 曲线转网格
 bpy.ops.object.select_all(action="DESELECT")
@@ -651,6 +793,10 @@ if RENDER:
     print("rendered", scene.render.filepath)
 
 # ---------------------------------------------------------------- 导出
+if BLEND:
+    blend_path=os.path.join(ROOT,BLEND)
+    os.makedirs(os.path.dirname(blend_path),exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=blend_path,compress=True)
 if GLB:
     os.makedirs(os.path.dirname(os.path.join(ROOT, GLB)), exist_ok=True)
     for o in bpy.data.objects:

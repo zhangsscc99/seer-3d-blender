@@ -2,6 +2,18 @@
 
 目标:用 Babylon.js 做一个接近 3A 画质的网页版 3D 赛尔号,优先使用已有资产。用户要求全程使用简体中文沟通。
 
+## 新场景：动力室 I（2026-10-11，独立于发明室）
+
+- 参考图 `refs/power_room.png`（1024×465）；放大裁切在 `renders/power_ref/`。用户选定：复刻 + **第三人称**机器人行走、全部 Blender 程序化、三种动态（火焰流动、灯条扫光、玻璃管能量流动）、先精修反应堆。
+- 文件：`blender/power_reactor.py`（反应堆，可单独审核，`build_reactor(prefix, origin, scale)`）、`blender/power_room.py`（房间，复用反应堆）、`blender/make_power_textures.py`（生成 `flame/grate/energy_blue/energy_orange/screen_ui.png`）、`src/power.ts`、路由 `?scene=power`（`src/main.ts` 仅加一条分支与导航按钮）。发明室文件未改动。
+- 导出：`python3 blender/make_power_textures.py`，然后 `Blender -b -P blender/power_room.py -- --glb public/models/power/power_room.glb`（可选 `--render x.png --samples 16 --campos 0,-6.4,6.6 --target 0,0.9,1.0 --lens 18`）。反应堆审核：`Blender -b -P blender/power_reactor.py -- --out renders/reactor_vN`。
+- 坐标仍是 Blender `(x,y,z)` → Babylon `(-x,z,-y)`。反应堆在 (0,3.5)、缩放 1.15；格栅走道 x±2.1、y −2.0…1.6，前方为地坑。元数据 `power_room.json`：`colliders` 圆、`walk` 走道矩形（Blender 坐标）、`spawn`(0,−1.0)、`lights`。网页端圆形推出 + 走道夹取，可沿设备滑行。
+- 命名约定：`wall_left/right/back*`（朝相机一侧自动隐藏）、`strip_cyan|red_<灯名>_<序号>`（每根克隆材质做扫光）、`flame_core` + 材质 `pw_flame`（UV 滚动 + 闪烁）、`energy_blue/orange`（UV 流动）。材质统一 `pw_*` 前缀，在 `tuneMaterials` 中按名调参。
+- `?scene=power&ref=1` 为参考视角（与 Blender 预览相机一致，水平 FOV 90°）。截图迭代记录：`renders/reactor_v1…v5`（子代理第 4 轮认为可导入）、`renders/power_v1b/v2/v3.png`（Blender 房间）、`renders/power_web_v1…v7.png`（网页参考视角）、`renders/power_web_tp.png`（第三人称）。
+- 注意：混元机器人必须在创建灯光之前 `spawn`，否则网格没有光源会全黑；其金属度在本场景压到 0.25。
+- 已验证：`check_scene.py --nono-count 0` 无问题（330 网格、约 14 万三角面）、`npm run build`、`node --test tests/`、`git diff --check`、网页无错误、第三人称四向碰撞。
+- 剩余差异（未获用户验收）：左右机组造型仍偏方块、缺少参考里更复杂的分层壳体和扶手形细节；玻璃管后端外壳为推测补建；墙面细节与线缆较少；格栅下层管道在参考视角里只露出一部分。
+
 ## 区域 1：左前 NONO 大舱（2026-10-10）
 
 用户要求按区域逐一修改，本轮仅重建左前大舱。上一保存点为 `c22384b`，以下尺寸覆盖此前 NONO 左舱记录；区域 2–8 尚未进入本轮修改。
@@ -55,6 +67,7 @@
 | 克洛斯星 | `src/kelosi.ts`、`src/terrain.ts`、`src/props.ts` | 混元 3D 生成,`public/models/hy/*` | 完成,可玩(机器人 WASD,Shift 加速) |
 | 赛尔号空间站 | `src/station.ts` | Kenney Space Station Kit(CC0),`public/models/ks/*` | 完成,模块化网格 + 剖切墙 |
 | 发明室 I | `src/invention.ts` | Blender 程序化建模,`public/models/inv/invention_room.glb` + `.json` | **进行中**,相似度约 6/10 |
+| 动力室 I | `src/power.ts` | Blender 程序化建模,`public/models/power/power_room.glb` + `.json` | 首版可玩（第三人称），待用户验收 |
 
 通用:玩家模型 `hy/robot`,`props.ts` 的 `loadProp` / `spawn` 负责加载与归一化;后处理为 DefaultRenderingPipeline(Bloom、ACES、FXAA、锐化、暗角)+ SSAO2 + CascadedShadowGenerator。
 

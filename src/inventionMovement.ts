@@ -13,7 +13,6 @@ export function roomCollision(colliders: { x: number; y: number; r: number }[]):
     circles: colliders.filter((c) => !(Math.abs(c.x) < 0.01 && Math.abs(c.y - 5.6) < 0.01))
       .map((c) => ({ x: -c.x, z: -c.y, r: c.r })),
     boxes: [
-      { minX: -3.85, maxX: -2.85, minZ: -4.225, maxZ: -3.675 },
       { minX: -1.5, maxX: 1.5, minZ: -6.4, maxZ: -5.8 },
       { minX: -2.5, maxX: -2.0, minZ: -6.95, maxZ: -4.25 },
       { minX: 2.0, maxX: 2.5, minZ: -6.95, maxZ: -4.25 },

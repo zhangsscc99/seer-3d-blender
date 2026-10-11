@@ -7,9 +7,9 @@ import { roomCollision, canOccupy, moveInRoom, floorHeight, EYE_HEIGHT } from '.
 const metadata = JSON.parse(readFileSync(new URL('../public/models/inv/invention_room.json', import.meta.url)));
 const collision = roomCollision(metadata.colliders);
 
-test('spawn is free and the former hologram-overlapping spawn is rejected', () => {
+test('spawn is free and the hologram pedestal cannot be entered', () => {
   assert.equal(canOccupy(0, 4.6, collision), true);
-  assert.equal(canOccupy(1.5, 4.2, collision), false);
+  assert.equal(canOccupy(2.35, 3.55, collision), false);
 });
 
 test('a long move cannot tunnel into or through the incubation chamber', () => {
@@ -20,10 +20,10 @@ test('a long move cannot tunnel into or through the incubation chamber', () => {
 });
 
 test('containment glass and its small console block movement', () => {
-  const glass = moveInRoom({ x: -4.7, z: -3 }, 0, -5, collision);
-  assert.ok(glass.z > -3.73);
-  const console = moveInRoom({ x: -3.35, z: -3 }, 0, -4, collision);
-  assert.ok(console.z >= -3.4 && console.z < -3.3);
+  const glass = moveInRoom({ x: -7.12, z: -3 }, 0, -5, collision);
+  assert.ok(glass.z > -3.57 && glass.z < -3.45);
+  const console = moveInRoom({ x: -4.70, z: -2 }, 0, -4, collision);
+  assert.ok(console.z >= -3.0 && console.z < -2.90);
 });
 
 test('walking reaches both steps before the console, rather than an oversized circle', () => {

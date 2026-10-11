@@ -159,7 +159,18 @@ async function main() {
       orbit.radius = Math.max(5, Math.min(80, r));
       orbit.target.set(tx, ty, tz);
     }
-    if (refMode && !dbg) {
+    if (refMode && !dbg && !params.has('ortho')) {
+      // 轻透视让左右前景放大、后排收远；保留 ortho 参数供固定尺寸审图。
+      orbit.radius = 28;
+      orbit.beta = 1.10;
+      const fitPerspective = () => {
+        const aspect = engine.getRenderWidth() / engine.getRenderHeight();
+        orbit.fov = 2 * Math.atan(Math.tan(0.17) * Math.max(1, (16 / 9) / aspect));
+      };
+      fitPerspective();
+      engine.onResizeObservable.add(fitPerspective);
+    }
+    if (refMode && !dbg && params.has('ortho')) {
       orbit.mode = Camera.ORTHOGRAPHIC_CAMERA;
       const fitReference = () => {
         const aspect = engine.getRenderWidth() / engine.getRenderHeight();

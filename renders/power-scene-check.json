@@ -1,0 +1,9 @@
+{
+  "asset": "public/models/power/power_room.glb",
+  "mesh_count": 330,
+  "vertices": 87677,
+  "triangles": 140236,
+  "nono_parts": {},
+  "collider_count": 13,
+  "issues": []
+}
