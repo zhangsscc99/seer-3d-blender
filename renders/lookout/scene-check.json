@@ -1,0 +1,9 @@
+{
+  "asset": "public/models/lookout/lookout_deck.glb",
+  "mesh_count": 126,
+  "vertices": 12179,
+  "triangles": 16896,
+  "nono_parts": {},
+  "collider_count": 6,
+  "issues": []
+}

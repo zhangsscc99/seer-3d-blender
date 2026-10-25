@@ -1,0 +1,79 @@
+/Users/yanqinluo/Desktop/SeerSpaceShipsaierhao/blender/kelosi_scene.py:164: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  GROUND_MAT.use_nodes = True
+heightfield 188x161, max mesh error 0.00000073
+Info: Saved as "kelosi_scene.blend"
+INFO Draco is available, use library at /Applications/Blender.app/Contents/Resources/5.2/scripts/addons_core/io_scene_gltf2/libbf_intern_draco_bridge.dylib
+INFO MeshOptimizer is available, use library at /Applications/Blender.app/Contents/Resources/5.2/scripts/addons_core/io_scene_gltf2/libbf_intern_meshopt_bridge.dylib
+17:41:21 | INFO: Starting glTF 2.0 export
+17:41:21 | INFO: Extracting primitive: fx_shard_geo_0
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: fx_shard_geo_1
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: fx_shard_geo_2
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: terrain
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: bg_mountain_1
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: bg_ridge_1
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: bg_mountain_0
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: patch_sand_0
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: Sphere.127
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: coral_fore_e_root0
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: Sphere.638
+17:41:21 | INFO: Primitives created: 1
+17:41:21 | INFO: Extracting primitive: Mesh.006
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: crystal_a_c1
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: crystal_a_c0
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: patch_grass_0
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Cylinder.054
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Sphere.320
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Sphere.318
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Cone
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Cylinder.086
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Cylinder.087
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Cylinder.088
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Icosphere.079
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Icosphere.080
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: patch_pink_0
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Torus.001
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Sphere.343
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Sphere.342
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: coral_fore_e_root1
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: Cylinder.001
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Extracting primitive: water_river
+17:41:22 | INFO: Primitives created: 1
+17:41:22 | INFO: Finished glTF 2.0 export in 0.7776398658752441 s
+/Users/yanqinluo/Desktop/SeerSpaceShipsaierhao/blender/kelosi_scene.py:1029: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  world.use_nodes = True
+03:06.228  render           | Saved: '/Users/yanqinluo/Desktop/SeerSpaceShipsaierhao/renders/kelosi_rebuild/13_blender_terrain_fix.png'
+
+exported /Users/yanqinluo/Desktop/SeerSpaceShipsaierhao/public/models/kelosi/kelosi_outdoor.glb 35 objects
+rendered renders/kelosi_rebuild/13_blender_terrain_fix.png
+Blender 5.2.2 LTS (hash d13f752e3b9c built 2026-09-15 01:49:19)
+
+Blender quit

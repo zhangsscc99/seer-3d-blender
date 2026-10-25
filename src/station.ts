@@ -22,8 +22,12 @@ import {
   Vector3,
 } from '@babylonjs/core';
 import { loadProp, spawn } from './props';
+import { attachCompanions, preloadCompanions } from './companions';
+import { createBackpack } from './backpack';
 
 const S = 4;
+// 空间站地板模型厚 1.2~1.3m，角色站上表面而不是陷进地板里。
+const GROUND_Y = 1.25;
 const FLIP = 0;
 
 type Dir = 'N' | 'S' | 'E' | 'W';
@@ -196,8 +200,9 @@ async function main() {
   ];
   await Promise.all([
     ...kit.map((n) => loadProp(scene, `ks/${n}`, { nearest: true })),
-    loadProp(scene, 'hy/robot'),
+    loadProp(scene, 'player/seer_robot'),
     loadProp(scene, 'hy/portal', { emissive: 0.4 }),
+    preloadCompanions(scene),
   ]);
 
   const casters: Mesh[] = [];
@@ -401,10 +406,16 @@ async function main() {
   addStrip(17, 10.88, 2, 0.06);
 
   // 玩家
-  const player = spawn(scene, 'hy/robot', new Vector3(12 * S, 0, 8 * S), { height: 1.7 });
+  const player = spawn(scene, 'player/seer_robot', new Vector3(12 * S, GROUND_Y, 8 * S), { height: 1.7 });
   for (const m of player.meshes) casters.push(m as Mesh);
+  const companions = attachCompanions(scene, player.node, {
+    playerHeight: 1.7,
+    groundAt: () => GROUND_Y,
+  });
+  for (const m of companions.meshes) casters.push(m as Mesh);
+  createBackpack(companions);
 
-  const cam = new ArcRotateCamera('cam', -Math.PI / 2, 1.0, 17, new Vector3(12 * S, 1, 8 * S), scene);
+  const cam = new ArcRotateCamera('cam', -Math.PI / 2, 1.0, 17, new Vector3(12 * S, GROUND_Y + 1, 8 * S), scene);
   cam.lowerRadiusLimit = 6;
   cam.upperRadiusLimit = 34;
   cam.lowerBetaLimit = 0.4;
@@ -474,7 +485,7 @@ async function main() {
 
   const pos = player.node.position;
   let heading = 0;
-  const camTarget = new Vector3(pos.x, 1, pos.z);
+  const camTarget = new Vector3(pos.x, GROUND_Y + 1, pos.z);
   const R = 0.55;
   const walkable = (x: number, z: number) => {
     if (!(worldFloor(x - R, z - R) && worldFloor(x + R, z - R) && worldFloor(x - R, z + R) && worldFloor(x + R, z + R)))
@@ -511,13 +522,13 @@ async function main() {
       heading += diff * Math.min(1, dt * 12);
     }
     player.node.rotation.y = heading;
-    pos.y = moving ? Math.abs(Math.sin(performance.now() * 0.012)) * 0.12 : 0;
+    pos.y = GROUND_Y + (moving ? Math.abs(Math.sin(performance.now() * 0.012)) * 0.12 : 0);
 
     if (!debugCam) {
       const k = Math.min(1, dt * 8);
       camTarget.x += (pos.x - camTarget.x) * k;
       camTarget.z += (pos.z - camTarget.z) * k;
-      camTarget.y = 1.2;
+      camTarget.y = GROUND_Y + 1.2;
       cam.target.copyFrom(camTarget);
     }
 
@@ -538,7 +549,7 @@ async function main() {
     }
   });
 
-  hud.textContent = '赛尔号空间站 · WASD 移动 · Shift 加速 · 拖动旋转 · 滚轮缩放';
+  hud.textContent = '赛尔号空间站 · WASD 移动 · Shift 加速 · B 精灵背包 · 拖动旋转 · 滚轮缩放';
   engine.runRenderLoop(() => scene.render());
   addEventListener('resize', () => engine.resize());
   (window as unknown as { __scene: Scene }).__scene = scene;

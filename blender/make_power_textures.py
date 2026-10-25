@@ -51,19 +51,35 @@ for name, cols in [('energy_blue', [(10, 40, 120), (40, 140, 255), (170, 225, 25
     pulse = 0.5 + 0.5 * np.sin(yy / N * np.pi * 2 * 6)
     v = np.clip(0.55 * n + 0.45 * pulse ** 3, 0, 1)
     Image.fromarray(ramp(v, [0, 0.35, 0.75, 1.0], cols)).save(OUT / f'{name}.png')
-# 控制台小屏：深蓝底 + 青色条形读数与波形。
+# Dense instrument UI: subdued blue-gray telemetry, nested dial and grouped tiny readouts.
 from PIL import ImageDraw
-ui = Image.new('RGB', (512, 320), (4, 22, 38))
+ui = Image.new('RGB', (768, 480), (5, 14, 23))
 d = ImageDraw.Draw(ui)
-CY, DIM = (90, 215, 240), (25, 80, 105)
-d.rounded_rectangle((8, 8, 503, 311), 18, outline=CY, width=5)
-for i in range(6):
-    w = int(rng.integers(90, 300))
-    d.rectangle((30, 34 + i * 28, 30 + w, 48 + i * 28), fill=CY if i % 2 == 0 else DIM)
-for gx in range(5):
-    for gy in range(3):
-        d.rectangle((350 + gx * 28, 34 + gy * 34, 370 + gx * 28, 58 + gy * 34),
-                    fill=CY if (gx + gy) % 3 else (230, 120, 60))
-d.line([(30 + j * 7, 260 + 26 * np.sin(j * .35)) for j in range(66)], fill=CY, width=4)
+CY, DIM, WHITE = (89, 163, 186), (28, 67, 84), (164, 187, 191)
+d.rectangle((8, 8, 759, 471), outline=DIM, width=5)
+d.rectangle((22, 20, 746, 49), fill=(21, 45, 59))
+d.text((34, 27), 'POWER SYSTEM / CORE DIAGNOSTICS                     SYS. 01', fill=WHITE)
+for x in range(38, 733, 24):
+    d.line((x, 74, x, 414), fill=(12, 29, 40))
+for y in range(74, 415, 24):
+    d.line((36, y, 733, y), fill=(12, 29, 40))
+for r in (112, 103, 82, 47):
+    d.ellipse((221-r,226-r,221+r,226+r),outline=CY if r==103 else DIM,width=3)
+for j in range(48):
+    a=j*np.pi/24
+    r=96 if j%4 else 90
+    d.line((221+r*np.cos(a),226+r*np.sin(a),221+101*np.cos(a),226+101*np.sin(a)),fill=WHITE,width=2)
+d.line((221,226,280,162),fill=CY,width=4)
+d.text((194, 220),'87.4%',fill=WHITE)
+for j in range(9):
+    y=82+j*29
+    d.text((374,y),f'{j+1:02d}  BUS',fill=WHITE)
+    d.rectangle((438,y,693,y+10),fill=DIM)
+    d.rectangle((438,y,438+int(rng.integers(70,240)),y+10),fill=CY if j%3 else (143,124,86))
+for x in range(390,724,15):
+    d.line((x,405,x,405-int(rng.integers(10,49))),fill=CY,width=5)
+for j in range(5):
+    d.text((42,364+j*17),f'CH-{j+1}  {int(rng.integers(100,990))}.0   STABLE',fill=WHITE)
+d.text((383, 440),'OUTPUT  94.02    FLOW  17.53',fill=WHITE)
 ui.save(OUT / 'screen_ui.png')
 print('power textures ok')

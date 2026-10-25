@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "id": "lookout_deck_fixed_reference",
+  "reference": {
+    "path": "refs/lookout_deck.png",
+    "actualFormat": "JPEG",
+    "sha256": "55045b7b28ae3f5390e75d2d5424b3b442017645df4d1e1dc29d2a3763b6c7e4",
+    "originalSize": [2800, 1272],
+    "validCrop": [270, 0, 2533, 1272],
+    "validCropConvention": "[left, top, rightExclusive, bottomExclusive]",
+    "validCropSize": [2263, 1272],
+    "referenceTitle": "瞭望露台 I"
+  },
+  "coordinateConvention": {
+    "landmarks": "Continuous image coordinates with the origin at the top-left edge; pixel centers are at half-integer coordinates. Babylon projected canvas coordinates use the same convention.",
+    "referenceOriginal": "Coordinates in the untouched 2800x1272 JPEG, before validCrop.",
+    "reference1280": "Coordinates after the fixed originalTo1280 affine transform.",
+    "annotationPolicy": "Manual image-space annotation from full-size and enlarged crops. Integer inputs are not subpixel claims; use confidence and uncertaintyPxOriginal. Missing model3D means pending, never zero error."
+  },
+  "transform": {
+    "type": "scale_to_height_720_then_fixed_center_subpixel_crop_1280",
+    "outputSize": [1280, 720],
+    "scale": 0.5660377358490566,
+    "scaleExact": "30/53",
+    "scaledValidCropSize": [1280.9433962264152, 720],
+    "centerCropOffsetInScaledPixels": [0.4716981132075473, 0],
+    "centerCropOffsetExact": ["25/53", "0"],
+    "effectiveSourceCenterCrop": [270.8333333333333, 0, 2532.833333333333, 1272],
+    "originalTo1280": [[0.5660377358490566, 0, -153.30188679245282], [0, 0.5660377358490566, 0], [0, 0, 1]],
+    "resampling": {
+      "filter": "bilinear",
+      "edgePolicy": "clamp_to_source_edge",
+      "outputPixelCenterRule": "sourceContinuous = [cropLeft + (outputX + 0.5 + offsetX) / scale, cropTop + (outputY + 0.5 + offsetY) / scale]; sample at sourceContinuous - 0.5"
+    },
+    "autoRegistration": false,
+    "perImageAdjustment": false,
+    "colorMatching": false
+  },
+  "camera": {
+    "coordinateSpace": "Babylon",
+    "alpha": 1.5707963267948966,
+    "beta": 1.182,
+    "radius": 40,
+    "target": [0, 1.4, -1.15],
+    "fov": 0.26514004445810213,
+    "fovMode": "vertical_fixed",
+    "note": "Long-lens calibrated initial camera supplied by the main agent; same direction and target as the earlier radius=10.54 camera, with fov scaled by 10.54/40.",
+    "blenderEquivalent": {
+      "position": [0, -35.864352, 16.5636984],
+      "target": [0, 1.15, 1.4]
+    }
+  },
+  "mask": {
+    "coordinateSpace": "image1280",
+    "include": [
+      {
+        "id": "inner_frame",
+        "rect": [16, 16, 1264, 704],
+        "note": "Fixed 16-pixel inner frame; validCrop already removes the original side black bars."
+      }
+    ],
+    "exclude": [
+      {
+        "id": "reference_title",
+        "rect": [112.736, 62.264, 375.943, 130.189],
+        "originalRect": [470, 110, 935, 230],
+        "note": "Fixed generous exclusion around the reference-only title; applied globally and inside every ROI."
+      }
+    ],
+    "rectConvention": "[left, top, rightExclusive, bottomExclusive]; rasterize with floor(left/top), ceil(right/bottom), clipped to the canvas."
+  },
+  "metrics": {
+    "colorSpace": "8-bit sRGB channels as decoded; no color matching or normalization",
+    "rgbMaeRmse": "Per-channel absolute error and root-mean-square error; also unweighted mean across RGB",
+    "colorDifference": {
+      "pixelMetric": "max(abs(actualRGB-referenceRGB)) across the three channels",
+      "thresholds": [8, 16, 32, 64],
+      "comparison": "strictly_greater_than",
+      "ratios": "thresholded pixels / masked pixels"
+    },
+    "differenceImageGain": 4,
+    "overlayReferenceWeight": 0.5,
+    "similarityScore": null
+  },
+  "landmarkStatus": {
+    "model3D": "pending_blender_export",
+    "fitGroup": "window octagons and primary platform corners only",
+    "validationGroup": "independent equipment, badge, pod, foreground and recess points; do not use for camera fitting",
+    "reportRule": "Only ids present in window.__lookoutCapture.landmarks with finite actual coordinates are matched. Missing or invalid actual points are pending and excluded from RMS/max denominators."
+  },
+  "rois": [
+    {"id":"window_outer","original":[1060,140,1785,625],"image1280":[446.698,79.245,857.075,353.774]},
+    {"id":"window_inner","original":[1130,210,1710,575],"image1280":[486.321,118.868,814.623,325.472]},
+    {"id":"badge","original":[1310,135,1520,285],"image1280":[588.208,76.415,707.075,161.321]},
+    {"id":"central_platform","original":[1080,540,1730,850],"image1280":[458.019,305.66,825.943,481.132]},
+    {"id":"glass_pod","original":[1330,400,1510,690],"image1280":[599.528,226.415,701.415,390.566]},
+    {"id":"left_lens","original":[510,760,830,1130],"image1280":[135.377,430.189,316.509,639.623]},
+    {"id":"right_dome","original":[1870,540,2050,710],"image1280":[905.189,305.66,1007.075,401.887]},
+    {"id":"rover","original":[1810,690,2160,930],"image1280":[871.226,390.566,1069.34,526.415]},
+    {"id":"right_canister","original":[2170,740,2400,1110],"image1280":[1075,418.868,1205.189,628.302]},
+    {"id":"foreground_core","original":[1340,890,1770,1160],"image1280":[605.189,503.774,848.585,656.604]},
+    {"id":"foreground_motor","original":[1740,900,2120,1150],"image1280":[831.604,509.434,1046.698,650.943]},
+    {"id":"deck_left","original":[500,580,1180,1180],"image1280":[129.717,328.302,514.623,667.925]},
+    {"id":"deck_right","original":[1640,560,2400,1120],"image1280":[775,316.981,1205.189,633.962]},
+    {"id":"space_background","original":[270,0,2533,540],"image1280":[-0.472,0,1280.472,305.66]}
+  ],
+  "landmarks": [
+    {"id":"window_outer_top_left","marker":1,"component":"window_outer","group":"fit","referenceOriginal":[1280,178],"reference1280":[571.226,100.755],"confidence":0.72,"uncertaintyPxOriginal":8,"model3D":null,"note":"Outer frame upper-left junction; partially shaped by lamp housing."},
+    {"id":"window_outer_top_right","marker":2,"component":"window_outer","group":"fit","referenceOriginal":[1560,178],"reference1280":[729.717,100.755],"confidence":0.72,"uncertaintyPxOriginal":8,"model3D":null,"note":"Outer frame upper-right junction; partially shaped by lamp housing."},
+    {"id":"window_outer_upper_right","marker":3,"component":"window_outer","group":"fit","referenceOriginal":[1690,294],"reference1280":[803.302,166.415],"confidence":0.75,"uncertaintyPxOriginal":8,"model3D":null,"note":"Outer frame upper-right diagonal junction."},
+    {"id":"window_outer_right","marker":4,"component":"window_outer","group":"fit","referenceOriginal":[1750,400],"reference1280":[837.264,226.415],"confidence":0.9,"uncertaintyPxOriginal":4,"model3D":null,"note":"Outer frame rightmost waist junction."},
+    {"id":"window_outer_lower_right","marker":5,"component":"window_outer","group":"fit","referenceOriginal":[1600,580],"reference1280":[752.358,328.302],"confidence":0.82,"uncertaintyPxOriginal":6,"model3D":null,"note":"Outer frame lower-right foot junction."},
+    {"id":"window_outer_lower_left","marker":6,"component":"window_outer","group":"fit","referenceOriginal":[1240,580],"reference1280":[548.585,328.302],"confidence":0.82,"uncertaintyPxOriginal":6,"model3D":null,"note":"Outer frame lower-left foot junction."},
+    {"id":"window_outer_left","marker":7,"component":"window_outer","group":"fit","referenceOriginal":[1095,400],"reference1280":[466.509,226.415],"confidence":0.9,"uncertaintyPxOriginal":4,"model3D":null,"note":"Outer frame leftmost waist junction."},
+    {"id":"window_outer_upper_left","marker":8,"component":"window_outer","group":"fit","referenceOriginal":[1150,294],"reference1280":[497.642,166.415],"confidence":0.75,"uncertaintyPxOriginal":8,"model3D":null,"note":"Outer frame upper-left diagonal junction."},
+    {"id":"window_inner_top_left","marker":9,"component":"window_inner","group":"fit","referenceOriginal":[1335,232],"reference1280":[602.358,131.321],"confidence":0.7,"uncertaintyPxOriginal":8,"model3D":null,"note":"Inner glass top-left; close to badge occlusion."},
+    {"id":"window_inner_top_right","marker":10,"component":"window_inner","group":"fit","referenceOriginal":[1500,232],"reference1280":[695.755,131.321],"confidence":0.7,"uncertaintyPxOriginal":8,"model3D":null,"note":"Inner glass top-right; close to badge occlusion."},
+    {"id":"window_inner_upper_right","marker":11,"component":"window_inner","group":"fit","referenceOriginal":[1630,300],"reference1280":[769.34,169.811],"confidence":0.76,"uncertaintyPxOriginal":7,"model3D":null,"note":"Inner glass upper-right diagonal junction."},
+    {"id":"window_inner_right","marker":12,"component":"window_inner","group":"fit","referenceOriginal":[1690,395],"reference1280":[803.302,223.585],"confidence":0.9,"uncertaintyPxOriginal":4,"model3D":null,"note":"Inner glass rightmost waist junction."},
+    {"id":"window_inner_lower_right","marker":13,"component":"window_inner","group":"fit","referenceOriginal":[1570,550],"reference1280":[735.377,311.321],"confidence":0.88,"uncertaintyPxOriginal":4,"model3D":null,"note":"Inner glass lower-right corner."},
+    {"id":"window_inner_lower_left","marker":14,"component":"window_inner","group":"fit","referenceOriginal":[1270,550],"reference1280":[565.566,311.321],"confidence":0.88,"uncertaintyPxOriginal":4,"model3D":null,"note":"Inner glass lower-left corner."},
+    {"id":"window_inner_left","marker":15,"component":"window_inner","group":"fit","referenceOriginal":[1150,395],"reference1280":[497.642,223.585],"confidence":0.9,"uncertaintyPxOriginal":4,"model3D":null,"note":"Inner glass leftmost waist junction."},
+    {"id":"window_inner_upper_left","marker":16,"component":"window_inner","group":"fit","referenceOriginal":[1210,300],"reference1280":[531.604,169.811],"confidence":0.76,"uncertaintyPxOriginal":7,"model3D":null,"note":"Inner glass upper-left diagonal junction."},
+    {"id":"platform_back_left","marker":17,"component":"central_platform","group":"fit","referenceOriginal":[1205,575],"reference1280":[528.774,325.472],"confidence":0.7,"uncertaintyPxOriginal":8,"model3D":null,"note":"Rear left top-platform junction, partly occluded by window base."},
+    {"id":"platform_back_right","marker":18,"component":"central_platform","group":"fit","referenceOriginal":[1625,575],"reference1280":[766.509,325.472],"confidence":0.7,"uncertaintyPxOriginal":8,"model3D":null,"note":"Rear right top-platform junction, partly occluded by window base."},
+    {"id":"platform_top_front_left","marker":19,"component":"central_platform","group":"fit","referenceOriginal":[1210,738],"reference1280":[531.604,417.736],"confidence":0.9,"uncertaintyPxOriginal":4,"model3D":null,"note":"Top deck front-left chamfer junction."},
+    {"id":"platform_top_front_right","marker":20,"component":"central_platform","group":"fit","referenceOriginal":[1585,738],"reference1280":[743.868,417.736],"confidence":0.9,"uncertaintyPxOriginal":4,"model3D":null,"note":"Top deck front-right chamfer junction."},
+    {"id":"platform_front_base_left","marker":21,"component":"central_platform","group":"validation","referenceOriginal":[1185,827],"reference1280":[517.453,468.113],"confidence":0.85,"uncertaintyPxOriginal":5,"model3D":null,"note":"Front face lower-left outside corner."},
+    {"id":"platform_front_base_right","marker":22,"component":"central_platform","group":"validation","referenceOriginal":[1645,827],"reference1280":[777.83,468.113],"confidence":0.85,"uncertaintyPxOriginal":5,"model3D":null,"note":"Front face lower-right outside corner."},
+    {"id":"platform_recess_top_left","marker":23,"component":"central_platform","group":"validation","referenceOriginal":[1270,782],"reference1280":[565.566,442.642],"confidence":0.88,"uncertaintyPxOriginal":4,"model3D":null,"note":"Central front recess upper-left chamfer."},
+    {"id":"platform_recess_top_right","marker":24,"component":"central_platform","group":"validation","referenceOriginal":[1545,782],"reference1280":[721.226,442.642],"confidence":0.88,"uncertaintyPxOriginal":4,"model3D":null,"note":"Central front recess upper-right chamfer."},
+    {"id":"pod_cap_center","marker":25,"component":"glass_pod","group":"validation","referenceOriginal":[1417,423],"reference1280":[648.774,239.434],"confidence":0.9,"uncertaintyPxOriginal":3,"model3D":null,"note":"Glass pod cap top ellipse center."},
+    {"id":"pod_cap_left","marker":26,"component":"glass_pod","group":"validation","referenceOriginal":[1378,431],"reference1280":[626.698,243.962],"confidence":0.85,"uncertaintyPxOriginal":4,"model3D":null,"note":"Glass pod cap left rim."},
+    {"id":"pod_cap_right","marker":27,"component":"glass_pod","group":"validation","referenceOriginal":[1455,431],"reference1280":[670.283,243.962],"confidence":0.85,"uncertaintyPxOriginal":4,"model3D":null,"note":"Glass pod cap right rim."},
+    {"id":"pod_glass_base_center","marker":28,"component":"glass_pod","group":"validation","referenceOriginal":[1417,571],"reference1280":[648.774,323.208],"confidence":0.82,"uncertaintyPxOriginal":5,"model3D":null,"note":"Glass cylinder lower rim center."},
+    {"id":"pod_base_bottom_center","marker":29,"component":"glass_pod","group":"validation","referenceOriginal":[1417,675],"reference1280":[648.774,382.075],"confidence":0.9,"uncertaintyPxOriginal":4,"model3D":null,"note":"Pod base bottom front center."},
+    {"id":"pod_lamp_center","marker":30,"component":"glass_pod","group":"validation","referenceOriginal":[1417,652],"reference1280":[648.774,369.057],"confidence":0.95,"uncertaintyPxOriginal":2,"model3D":null,"note":"Cyan pod lamp center."},
+    {"id":"badge_top_left","marker":31,"component":"badge","group":"validation","referenceOriginal":[1355,153],"reference1280":[613.679,86.604],"confidence":0.8,"uncertaintyPxOriginal":5,"model3D":null,"note":"Badge housing top-left corner."},
+    {"id":"badge_top_right","marker":32,"component":"badge","group":"validation","referenceOriginal":[1475,153],"reference1280":[681.604,86.604],"confidence":0.8,"uncertaintyPxOriginal":5,"model3D":null,"note":"Badge housing top-right corner."},
+    {"id":"badge_left_vertex","marker":33,"component":"badge","group":"validation","referenceOriginal":[1328,207],"reference1280":[598.396,117.17],"confidence":0.85,"uncertaintyPxOriginal":4,"model3D":null,"note":"Badge housing left point."},
+    {"id":"badge_right_vertex","marker":34,"component":"badge","group":"validation","referenceOriginal":[1503,207],"reference1280":[697.453,117.17],"confidence":0.85,"uncertaintyPxOriginal":4,"model3D":null,"note":"Badge housing right point."},
+    {"id":"badge_bottom_center","marker":35,"component":"badge","group":"validation","referenceOriginal":[1415,263],"reference1280":[647.642,148.868],"confidence":0.8,"uncertaintyPxOriginal":5,"model3D":null,"note":"Badge housing lower frame center."},
+    {"id":"badge_emblem_center","marker":36,"component":"badge","group":"validation","referenceOriginal":[1416,207],"reference1280":[648.208,117.17],"confidence":0.75,"uncertaintyPxOriginal":7,"model3D":null,"note":"Emblem graphic center; not a geometric corner."},
+    {"id":"left_lens_top_ring_center","marker":37,"component":"left_lens","group":"validation","referenceOriginal":[635,818],"reference1280":[206.132,463.019],"confidence":0.85,"uncertaintyPxOriginal":5,"model3D":null,"note":"Left turret upper collar ellipse center."},
+    {"id":"left_lens_optic_center","marker":38,"component":"left_lens","group":"validation","referenceOriginal":[611,961],"reference1280":[192.547,543.962],"confidence":0.96,"uncertaintyPxOriginal":2,"model3D":null,"note":"Left lens optical center."},
+    {"id":"left_lens_base_front_center","marker":39,"component":"left_lens","group":"validation","referenceOriginal":[635,1080],"reference1280":[206.132,611.321],"confidence":0.85,"uncertaintyPxOriginal":5,"model3D":null,"note":"Left lens base front center."},
+    {"id":"right_dome_top","marker":40,"component":"right_dome","group":"validation","referenceOriginal":[1955,566],"reference1280":[953.302,320.377],"confidence":0.88,"uncertaintyPxOriginal":4,"model3D":null,"note":"Right dome silhouette top."},
+    {"id":"right_dome_window_center","marker":41,"component":"right_dome","group":"validation","referenceOriginal":[1955,620],"reference1280":[953.302,350.943],"confidence":0.85,"uncertaintyPxOriginal":4,"model3D":null,"note":"Right dome dark window center."},
+    {"id":"right_dome_base_bottom","marker":42,"component":"right_dome","group":"validation","referenceOriginal":[1958,683],"reference1280":[955,386.604],"confidence":0.9,"uncertaintyPxOriginal":3,"model3D":null,"note":"Right dome base bottom center."},
+    {"id":"rover_rollcage_top","marker":43,"component":"rover","group":"validation","referenceOriginal":[1995,738],"reference1280":[975.943,417.736],"confidence":0.72,"uncertaintyPxOriginal":8,"model3D":null,"note":"Rover roll-cage upper junction; small and oblique."},
+    {"id":"rover_nose_center","marker":44,"component":"rover","group":"validation","referenceOriginal":[1945,820],"reference1280":[947.642,464.151],"confidence":0.85,"uncertaintyPxOriginal":5,"model3D":null,"note":"Rover front nose center."},
+    {"id":"rover_wheel_left_center","marker":45,"component":"rover","group":"validation","referenceOriginal":[1875,810],"reference1280":[908.019,458.491],"confidence":0.78,"uncertaintyPxOriginal":7,"model3D":null,"note":"Image-left rover wheel center."},
+    {"id":"rover_wheel_right_center","marker":46,"component":"rover","group":"validation","referenceOriginal":[2080,810],"reference1280":[1024.057,458.491],"confidence":0.75,"uncertaintyPxOriginal":8,"model3D":null,"note":"Image-right rover wheel center."},
+    {"id":"rover_wheel_near_center","marker":47,"component":"rover","group":"validation","referenceOriginal":[2000,862],"reference1280":[978.774,487.925],"confidence":0.72,"uncertaintyPxOriginal":8,"model3D":null,"note":"Near rover wheel center; partially occluded."},
+    {"id":"canister_cap_center","marker":48,"component":"right_canister","group":"validation","referenceOriginal":[2290,797],"reference1280":[1142.925,451.132],"confidence":0.93,"uncertaintyPxOriginal":3,"model3D":null,"note":"Right upright canister cap ellipse center."},
+    {"id":"canister_panel_center","marker":49,"component":"right_canister","group":"validation","referenceOriginal":[2265,945],"reference1280":[1128.774,534.906],"confidence":0.85,"uncertaintyPxOriginal":5,"model3D":null,"note":"Right canister front panel center."},
+    {"id":"canister_base_center","marker":50,"component":"right_canister","group":"validation","referenceOriginal":[2270,1065],"reference1280":[1131.604,602.83],"confidence":0.88,"uncertaintyPxOriginal":4,"model3D":null,"note":"Right canister base front center."},
+    {"id":"fore_flange_left_center","marker":51,"component":"foreground_core","group":"validation","referenceOriginal":[1420,1030],"reference1280":[650.472,583.019],"confidence":0.88,"uncertaintyPxOriginal":4,"model3D":null,"note":"Foreground core left flange center."},
+    {"id":"fore_core_screen_center","marker":52,"component":"foreground_core","group":"validation","referenceOriginal":[1540,984],"reference1280":[718.396,556.981],"confidence":0.9,"uncertaintyPxOriginal":3,"model3D":null,"note":"Foreground core small top screen center."},
+    {"id":"fore_core_slot_center","marker":53,"component":"foreground_core","group":"validation","referenceOriginal":[1550,1090],"reference1280":[724.057,616.981],"confidence":0.9,"uncertaintyPxOriginal":3,"model3D":null,"note":"Foreground core dark front slot center."},
+    {"id":"fore_flange_right_center","marker":54,"component":"foreground_core","group":"validation","referenceOriginal":[1710,1020],"reference1280":[814.623,577.358],"confidence":0.82,"uncertaintyPxOriginal":5,"model3D":null,"note":"Foreground core right flange/coupling center."},
+    {"id":"fore_motor_left_flange_center","marker":55,"component":"foreground_motor","group":"validation","referenceOriginal":[1820,1020],"reference1280":[876.887,577.358],"confidence":0.82,"uncertaintyPxOriginal":5,"model3D":null,"note":"Foreground motor left flange center."},
+    {"id":"fore_motor_vent_center","marker":56,"component":"foreground_motor","group":"validation","referenceOriginal":[1920,1010],"reference1280":[933.491,571.698],"confidence":0.85,"uncertaintyPxOriginal":5,"model3D":null,"note":"Foreground motor upper vent center."},
+    {"id":"fore_motor_cap_center","marker":57,"component":"foreground_motor","group":"validation","referenceOriginal":[2040,1020],"reference1280":[1001.415,577.358],"confidence":0.8,"uncertaintyPxOriginal":6,"model3D":null,"note":"Foreground motor right end-cap center."}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "asset": "public/models/kelosi/kelosi_outdoor.glb",
+  "mesh_count": 32,
+  "vertices": 245673,
+  "triangles": 309517,
+  "nono_parts": {},
+  "collider_count": 70,
+  "issues": []
+}

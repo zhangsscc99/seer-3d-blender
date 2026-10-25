@@ -12,6 +12,7 @@ import bmesh
 from mathutils import Vector
 
 HERE = Path(__file__).resolve().parent
+PIPE_R_END = (0., 0.)  # 右侧铜管落地点（未缩放的局部坐标），供房间放置接口座
 _mats = {}
 
 
@@ -40,8 +41,8 @@ def material(name, color, rough=.35, metal=0., emit=None, strength=0., coat=0., 
 
 def materials():
     return dict(
-        cream=material('pw_cream', (.5, .42, .31), .36, .2, coat=.35),
-        cream_l=material('pw_cream_light', (.6, .52, .4), .32, .18, coat=.4),
+        cream=material('pw_cream', (.52, .49, .42), .31, .38, coat=.35),
+        cream_l=material('pw_cream_light', (.65, .61, .52), .29, .32, coat=.4),
         brass=material('pw_brass', (.86, .52, .26), .24, 1.),
         gun=material('pw_gunmetal', (.07, .08, .09), .42, .8),
         glow=material('pw_glow_cyan', (.02, .12, .16), .4, emit=(.25, .85, 1.), strength=4.),
@@ -52,7 +53,7 @@ def materials():
 
 
 # 蛋形外轮廓：下半椭圆更长（底部宽），上半收得更快。
-R, ZC, HB, HT, Z0, ZTOP = 1.34, 1.9, 3.4, 2.2, .14, 4.1
+R, ZC, HB, HT, Z0, ZTOP = 1.34, 1.9, 4.6, 2.2, .14, 4.1
 
 
 def egg(z):
@@ -200,8 +201,8 @@ def build_reactor(prefix='reactor', origin=(0, 0, 0), scale=1., yaw=0.):
     top = [((egg(3.04) - .1) * math.sin(a), -(egg(3.04) - .1) * math.cos(a), 3.04) for a in
            [-GLASS + 2 * GLASS * i / 24 for i in range(25)]]
     pipe('win_frame_top', top, .025, M['brass'], fillet=.01)
-    patch('rib_big', -WIN - deg(7), WIN + deg(7), 1.56, 1.95, M['cream_l'], off=.15, t=.42, bevel=.05)
-    patch('rib_low', -WIN - deg(6), WIN + deg(6), 0.95, 1.26, M['cream_l'], off=.12, t=.4, bevel=.045)
+    patch('rib_big', -WIN - deg(7), WIN + deg(7), 1.66, 1.89, M['cream_l'], off=.12, t=.29, bevel=.05)
+    patch('rib_low', -WIN - deg(6), WIN + deg(6), 0.99, 1.18, M['cream_l'], off=.10, t=.28, bevel=.045)
     patch('lintel', -WIN - deg(3), WIN + deg(3), 3.0, 3.12, M['cream_l'], off=.05, t=.3, bevel=.03)
     box('lintel_plate', (.5, .08, .3), (0, -egg(3.32) - .03, 3.32), M['cream_l'], bevel=.03, rot=(-.42, 0, 0))
 
@@ -232,12 +233,12 @@ def build_reactor(prefix='reactor', origin=(0, 0, 0), scale=1., yaw=0.):
         for v in o.data.vertices:
             v.co.y -= .08
     # ---------------- 底座
-    prim('cylinder', 'base', M['gun'], bevel=.03, radius=1.82, depth=.14, vertices=72, location=(0, 0, .07))
-    prim('cylinder', 'base_top', M['gun'], bevel=.015, radius=1.42, depth=.05, vertices=72, location=(0, 0, .16))
-    box('glow_strip_front', (.5, .05, .035), (0, -1.6, .15), M['glow'], bevel=.01)
+    prim('cylinder', 'base', M['gun'], bevel=.03, radius=1.5, depth=.14, vertices=72, location=(0, 0, .07))
+    prim('cylinder', 'base_top', M['gun'], bevel=.015, radius=1.28, depth=.05, vertices=72, location=(0, 0, .16))
+    box('glow_strip_front', (.5, .05, .035), (0, -1.44, .15), M['glow'], bevel=.01)
     for k in range(4):
         a = deg(28 + k * 6)
-        box(f'glow_dot_{k}', (.07, .05, .035), (1.62 * math.sin(a), -1.62 * math.cos(a), .15), M['glow'],
+        box(f'glow_dot_{k}', (.07, .05, .035), (1.4 * math.sin(a), -1.4 * math.cos(a), .15), M['glow'],
             bevel=.008, rot=(0, 0, a))
 
     # ---------------- 黄铜管：左侧低位下折入地，右侧高位水平伸出
@@ -257,11 +258,13 @@ def build_reactor(prefix='reactor', origin=(0, 0, 0), scale=1., yaw=0.):
     collar('pipe_left_ring2', p2 + Vector((0, 0, -.12)), (0, 0, 1), .24, .1, M['brass'])
     collar('pipe_left_foot', Vector((p3.x, p3.y, .08)), (0, 0, 1), .28, .16, M['brass'])
 
-    aR = deg(80)
+    aR = deg(88)
     outR = Vector((math.sin(aR), -math.cos(aR), 0))
     q0 = on_shell(aR, 2.3, -.05)
-    q1 = q0 + outR * .7
-    q2 = Vector((q1.x, q1.y, .6))
+    q1 = q0 + outR * .95
+    q2 = Vector((q1.x, q1.y, 1.28))
+    global PIPE_R_END
+    PIPE_R_END = (q2.x, q2.y)
     pipe('pipe_right', [q0, q1, q2], .19, M['brass'], fillet=.2)
     collar('pipe_right_flange', on_shell(aR, 2.3, .04), outR, .31, .12, M['brass'])
     collar('pipe_right_ring', q0 + outR * .4, outR, .23, .09, M['brass'])

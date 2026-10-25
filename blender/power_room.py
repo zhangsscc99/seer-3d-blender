@@ -14,6 +14,7 @@ from mathutils import Vector
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import power_reactor  # noqa: E402
 from power_reactor import build_reactor, material, materials  # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
@@ -30,7 +31,7 @@ META = {'colliders': [], 'lights': [], 'animated': {}, 'walk': {}, 'spawn': {}}
 
 M = materials()
 M.update(
-    wall=material('pw_wall', (.2, .24, .3), .42, .6),
+    wall=material('pw_wall', (.32, .37, .45), .4, .6),
     wall_d=material('pw_wall_dark', (.05, .07, .09), .5, .6),
     silver=material('pw_silver', (.62, .64, .67), .3, .9),
     grate=material('pw_grate', (.36, .36, .37), .42, .8, image=HERE / 'grate.png'),
@@ -47,6 +48,7 @@ glass_bs = M['glass'].node_tree.nodes['Principled BSDF']
 glass_bs.inputs['Alpha'].default_value = .18
 glass_bs.inputs['Transmission Weight'].default_value = .9
 M['glass'].surface_render_method = 'BLENDED'
+glass_bs.inputs['Base Color'].default_value = (.10,.14,.19,1)
 
 objs = []
 
@@ -180,6 +182,9 @@ def screen(name, size, loc, rot, frame=True):
     if frame:
         box(f'{name}_frame', (size[0] + .08, .05, size[1] + .08), loc, M['gun'], bevel=.015, rot=rot)
     o = plane(f'{name}_ui', size, loc, M['ui'], rot=(rot[0] + math.pi / 2, rot[1], rot[2]))
+    for d in o.data.uv_layers.active.data:
+        d.uv.x *= 2 / size[0]
+        d.uv.y *= 2 / size[1]
     # 屏面略微前移，避免与框体 Z-fighting。
     n = Vector((0, -1, 0))
     n.rotate(__import__('mathutils').Euler(rot))
@@ -206,6 +211,53 @@ def vents(name, start, end, z, n, mat=None):
         p = a.lerp(b, (k + .5) / n)
         yaw = math.atan2(b.y - a.y, b.x - a.x)
         box(f'{name}_{k}', (.035, .1, .16), (p.x, p.y, z), mat or M['wall_d'], bevel=.008, rot=(0, 0, yaw))
+
+
+def shell(name, outline, z0, z1, mat, bevel=.10):
+    """Closed extruded footprint; bevelled concave outlines make continuous machine decks."""
+    n = len(outline)
+    vs = [(x, y, z) for z in (z0, z1) for x, y in outline]
+    fs = [tuple(reversed(range(n))), tuple(range(n, 2*n))]
+    fs += [(i, (i+1)%n, (i+1)%n+n, i+n) for i in range(n)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(vs, [], fs)
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    return finish(o, mat, bevel)
+
+
+def deck(name, outline, z, thickness=.55):
+    shell(name+'_undercarriage', outline, z-thickness-.18, z-.12, M['cream'], .14)
+    shell(name+'_gasket', outline, z-.10, z+.015, M['rubber'], .07)
+    shell(name+'_armor', outline, z+.02, z+.23, M['cream_l'], .10)
+
+
+def top_vent(name, pts, z):
+    # A recessed dark channel with short transverse metallic fins, never standing spikes.
+    # Flat inset channel sits inside the pale armor lip.
+    for j,(a,b) in enumerate(zip(pts,pts[1:])):
+        a,b=Vector(a),Vector(b)
+        mid=(a+b)/2
+        box(f'{name}_recess{j}',((b-a).length+.09,.145,.025),(mid.x,mid.y,z),M['gun'],.025,
+            rot=(0,0,math.atan2(b.y-a.y,b.x-a.x)))
+    for j, (a,b) in enumerate(zip(pts,pts[1:])):
+        a,b=Vector(a),Vector(b)
+        d=b-a
+        for k in range(max(2,int(d.length/.105))):
+            v=a.lerp(b,(k+.5)/max(2,int(d.length/.105)))
+            box(f'{name}_fin_{j}_{k}', (.038,.125,.025), (v.x,v.y,z+.022), M['silver'], .01,
+                rot=(0,0,math.atan2(d.y,d.x)))
+
+
+def top_panel(name, x, y, z, w=.48, h=.65):
+    box(name+'_socket', (w+.1,h+.1,.065), (x,y,z), M['cream'], .028)
+    screen(name, (w,h), (x,y,z+.037), (-math.pi/2,0,0))
 
 
 def light(p, color, power, rng):
@@ -246,23 +298,27 @@ for k, x in enumerate((-1.95, -1.7)):
 
 # ================================================================ 地面
 # 中央格栅走道：2×2 块，银色框梁，中心十字橙色发光缝。
-WX0, WX1, WY0, WY1 = -2.1, 2.1, -2.0, 1.6
+WX0, WX1, WY0, WY1 = -2.1, 2.1, -1.5, 1.6
 WM = (WY0 + WY1) / 2
-for i, (x0, x1) in enumerate(((WX0, 0), (0, WX1))):
-    for j, (y0, y1) in enumerate(((WY0, WM), (WM, WY1))):
-        plane(f'floor_grate_{i}{j}', (x1 - x0 - .12, y1 - y0 - .12), ((x0 + x1) / 2, (y0 + y1) / 2, .0),
-              M['grate'], uv=3.)
-for x in (WX0, 0, WX1):
-    box(f'floor_beam_x_{x}', (.12, WY1 - WY0 + .12, .1), (x, (WY0 + WY1) / 2, -.03), M['silver'], bevel=.015)
-for y in (WY0, WM, WY1):
-    box(f'floor_beam_y_{y}', (WX1 - WX0 + .12, .12, .1), (0, y, -.03), M['silver'], bevel=.015)
-box('floor_seam_x', (.06, WY1 - WY0 - .2, .02), (0, (WY0 + WY1) / 2, .025), M['seam'], bevel=0)
-box('floor_seam_y', (WX1 - WX0 - .2, .06, .02), (0, WM, .025), M['seam'], bevel=0)
+# 原图格栅是 4×5 块粗网孔，一直铺到反应堆脚下。
+GY1 = 2.9
+XS = [WX0 + (WX1 - WX0) * k / 4 for k in range(5)]
+YS = [WY0 + (GY1 - WY0) * k / 5 for k in range(6)]
+for i in range(4):
+    for j in range(5):
+        plane(f'floor_grate_{i}{j}', (XS[i + 1] - XS[i] - .08, YS[j + 1] - YS[j] - .08),
+              ((XS[i] + XS[i + 1]) / 2, (YS[j] + YS[j + 1]) / 2, .0), M['grate'], uv=1.)
+for x in XS:
+    box(f'floor_beam_x_{x:.2f}', (.08, GY1 - WY0 + .08, .1), (x, (WY0 + GY1) / 2, -.03), M['silver'], bevel=.012)
+for y in YS:
+    box(f'floor_beam_y_{y:.2f}', (WX1 - WX0 + .08, .08, .1), (0, y, -.03), M['silver'], bevel=.012)
+box('floor_seam_x', (.05, GY1 - WY0 - .2, .02), (0, (WY0 + GY1) / 2, .025), M['seam'], bevel=0)
+box('floor_seam_y', (WX1 - WX0 - .2, .05, .02), (0, YS[2], .025), M['seam'], bevel=0)
 light((0, WM, .4), (1., .55, .2), 3, 4)
 # 格栅下方暗腔。
-box('floor_under', (WX1 - WX0, WY1 - WY0, .05), (0, (WY0 + WY1) / 2, -.6), M['wall_d'], bevel=0)
+box('floor_under', (WX1 - WX0, GY1 - WY0, .05), (0, (WY0 + GY1) / 2, -.6), M['wall_d'], bevel=0)
 # 反应堆与两侧设备下的深色实心地台。
-box('floor_back', (RX * 2, RY1 - WY1, .12), (0, (WY1 + RY1) / 2, -.06), M['gun'], bevel=.01)
+box('floor_back', (RX * 2, RY1 - GY1, .12), (0, (GY1 + RY1) / 2, -.06), M['gun'], bevel=.01)
 for s in (-1, 1):
     box(f'floor_side_{s}', (RX - WX1, WY1 - RY0, .12), (s * (RX + WX1) / 2, (WY1 + RY0) / 2, -.06), M['gun'],
         bevel=.01)
@@ -273,111 +329,165 @@ for s in (-1, 1):
     box(f'pit_brace_{s}', (.14, 2.4, .14), (s * 1.2, WY0 - 1.0, -.85), M['silver'], bevel=.02, rot=(.75, 0, 0))
 for k, z in enumerate((-1.25, -.95)):
     along(f'pit_pipe_{k}', (-3.5, WY0 - .7 - k * .5, z), (3.5, WY0 - .7 - k * .5, z), .1, M['brass'])
-pipe('pit_riser', [(-1.25, -2.9, -1.7), (-1.25, -2.9, -.4), (-1.25, -2.4, .2)], .11, M['brass'], fillet=.3)
-cyl('pit_riser_collar', .2, .22, (-1.25, -2.9, -.7), M['gun'], bevel=.02)
+pipe('pit_riser', [(-1.25, -2.4, -1.7), (-1.25, -2.4, -.4), (-1.25, -1.9, .2)], .11, M['brass'], fillet=.3)
+cyl('pit_riser_collar', .2, .22, (-1.25, -2.4, -.7), M['gun'], bevel=.02)
 for k in range(2):
-    box(f'pit_riser_glow_{k}', (.05, .03, .05), (-1.33 + k * .16, -3.11, -.62), M['glow'], bevel=0)
+    box(f'pit_riser_glow_{k}', (.05, .03, .05), (-1.33 + k * .16, -2.61, -.62), M['glow'], bevel=0)
 
+shell('pit_diagonal_rim',[(-2.16,-1.43),(-1.06,-1.43),(.15,-2.48),(1.20,-2.15),(2.16,-1.43),
+                          (2.16,-1.62),(1.25,-2.38),(.08,-2.74),(-1.14,-1.65),(-2.16,-1.65)],-.11,.05,M['silver'],.025)
 # ================================================================ 反应堆（后方正中）
-RCX, RCY, RS = 0., 3.5, 1.15
+RCX, RCY, RS = .25, 3.6, 1.35
 build_reactor('reactor', (RCX, RCY, 0), scale=RS)
-collider(RCX, RCY, 1.85 * RS)
+collider(RCX, RCY, 1.52 * RS)
 light((RCX, RCY - 3.0, 2.8), (1., .58, .2), 70, 10)
 light((RCX, RCY, 2.3), (1., .6, .25), 30, 6)
+# Replace the original placeholder face directly; retain full UV on every quad.
+reactor_display = bpy.data.objects['reactor_unit_screen']
+reactor_display.data.materials.clear()
+reactor_display.data.materials.append(M['ui'])
+for poly in reactor_display.data.polygons:
+    for loop, uv in zip(poly.loop_indices, ((0,0),(1,0),(1,1),(0,1))):
+        reactor_display.data.uv_layers.active.data[loop].uv = uv
+bpy.data.objects.remove(bpy.data.objects['reactor_unit_chip'], do_unlink=True)
 # 反应堆右侧铜管落入的接口座。
-# 位置由 power_reactor 右管落点 (1.94, -0.34, 0.6) 按缩放换算。
-PORT = (RCX + 1.94 * RS, RCY - .34 * RS)
-cyl('reactor_port_base', .45, .69, (*PORT, .345), M['cream'], bevel=.04)
-cyl('reactor_port_ring', .37, .1, (*PORT, .72), M['brass'], bevel=.02)
+# 位置由 power_reactor 右管落点按缩放换算。
+PORT = (RCX + power_reactor.PIPE_R_END[0] * RS, RCY + power_reactor.PIPE_R_END[1] * RS)
+cyl('reactor_port_base', .45, 1.59, (*PORT, .795), M['cream'], bevel=.04)
+cyl('reactor_port_ring', .37, .1, (*PORT, 1.64), M['brass'], bevel=.02)
 
 # ================================================================ 左侧设备组
-# L1 扶手机组：长条机身，末端是朝向走道的青色横纹灯。
-box('left_arm_plinth', (3.4, 1.05, .8), (-3.7, .6, .4), M['cream'], bevel=.08)
-box('left_arm_body', (3.5, 1.4, .7), (-3.8, .6, 1.1), M['cream_l'], bevel=.18)
-box('left_arm_top', (3.3, 1.2, .16), (-3.9, .6, 1.52), M['cream'], bevel=.06)
-lamp('left_lamp', (-2.25, .6), 0., .8, 1.45, .7, M['glow'])
-vents('left_arm_vents', (-5.1, -.11, 0), (-2.9, -.11, 0), 1.0, 14)
-# L2 后方上层"拳形"机组，顶部深色十字面板。
-box('left_upper_body', (2.3, 1.3, .8), (-3.9, 1.55, 1.25), M['cream_l'], bevel=.2)
-box('left_upper_nose', (.8, 1.0, .6), (-2.55, 1.45, 1.15), M['cream'], bevel=.18, rot=(0, 0, -.25))
-box('left_upper_plate', (1.5, 1.0, .04), (-4.1, 1.5, 1.66), M['gun'], bevel=.01)
-box('left_upper_plate_x', (.4, 1.3, .045), (-4.1, 1.5, 1.665), M['gun'], bevel=.01)
-screen('left_upper_scr', (.42, .26), (-3.0, 1.0, 1.75), (-.5, 0, .25))
-# L3 前左控制台：斜面上的屏幕 + 键盘，侧面百叶。
-box('left_console_body', (3.2, 2.4, 1.8), (-3.9, -2.4, .9), M['cream_l'], bevel=.25)
-box('left_console_slope', (2.8, 1.3, .2), (-3.85, -3.05, 1.92), M['cream'], bevel=.06, rot=(.55, 0, 0))
-box('left_console_head', (2.9, 1.0, .7), (-3.95, -1.75, 2.05), M['cream'], bevel=.18)
-screen('left_console_scr', (.7, .45), (-3.45, -3.12, 1.98), (.55 - math.pi / 2, 0, 0))
-keypad('left_console_keys', (-4.5, -3.14, 1.95), (.55 - math.pi / 2, 0, 0))
-vents('left_console_vents', (-2.28, -3.5, 0), (-2.28, -1.3, 0), .7, 12)
-# L4 后左高柜（靠墙），带小屏和红灯。
-box('left_cabinet', (2.3, 1.6, 3.4), (-5.2, 3.2, 1.7), M['cream'], bevel=.2)
-box('left_cabinet_front', (1.9, .2, 2.4), (-5.1, 2.35, 1.6), M['cream_l'], bevel=.08)
-screen('left_cabinet_scr', (.5, .35), (-4.6, 2.22, 2.3), (0, 0, 0))
-for k in range(3):
-    box(f'left_cabinet_red_{k}', (.1, .04, .06), (-5.6 + k * .18, 2.22, 2.25), M['red'], bevel=.01)
-box('left_mid_box', (1.0, .9, 1.0), (-3.1, 2.75, .9), M['cream_l'], bevel=.14)
-screen('left_mid_box_scr', (.5, .36), (-3.1, 2.27, 1.05), (0, 0, 0))
-for c in [(-3.6, .6, 1.0), (-2.25, .6, .72), (-3.6, 1.5, 1.0), (-3.9, -2.4, 1.6), (-5.2, 3.2, 1.6), (-3.1, 2.75, .7)]:
-    collider(c[0], c[1], c[2])
+# Left: continuous sculpted console decks with an inset T-shaped service plate.
+left_outline=[(-5.9,-.05),(-3.05,-.05),(-2.5,.10),(-1.93,.65),(-1.93,1.28),
+              (-2.50,1.78),(-3.25,1.91),(-5.9,1.91)]
+deck('left_arm',left_outline,1.12,.58)
+lamp('left_lamp',(-2.63,.94),math.radians(-22),.92,1.53,.78,M['glow'],spread=math.radians(72))
+# two long raised guard cheeks flow into the light drum.
+for y in (.10,1.73):
+    shell('left_guard_'+str(y),[(-5.65,y-.11),(-2.9,y-.11),(-2.35,y+.05),(-2.25,y+.26),(-5.65,y+.26)],
+          1.30,1.57,M['cream'],.10)
+top_vent('left_deck_vent',[(-5.5,.38),(-3.45,.38),(-3.45,1.42),(-2.96,1.42)],1.36)
+shell('left_service_T',[(-5.6,.53),(-4.25,.53),(-4.25,.79),(-3.58,.79),(-3.58,1.20),(-4.25,1.20),
+                        (-4.25,1.6),(-5.6,1.6)],1.35,1.40,M['gun'],.035)
+box('left_upper_knuckle',(1.25,.77,.37),(-2.94,1.67,1.62),M['cream'],.16,rot=(0,0,-.18))
+# Rear console and integrated blue inset, instead of a floating screen.
+deck('left_upper',[(-5.6,1.97),(-3.5,1.97),(-2.92,2.35),(-3.08,3.18),(-5.6,3.35)],1.70,.55)
+box('left_upper_screen_boss',(1.05,.86,.18),(-3.75,2.64,1.99),M['cream'],.14)
+top_panel('left_upper_scr',-3.75,2.64,2.09,.62,.42)
+top_vent('left_upper_vent',[(-5.25,2.13),(-3.52,2.13)],1.96)
+# Front desk is low, broad and rounded; a separate thick monitor rises from its back edge.
+front_outline=[(-6.2,-3.48),(-3.25,-3.48),(-2.70,-3.18),(-2.32,-2.52),(-2.33,-1.55),
+               (-2.72,-.76),(-3.65,-.47),(-6.2,-.47)]
+deck('left_console',front_outline,1.33,.75)
+box('left_console_pedestal',(2.55,1.35,1.15),(-4.15,-1.55,.57),M['gun'],.22)
+# large readable inclined front face + rounded visor and keyboard shelf.
+box('left_monitor_body',(1.68,.62,1.32),(-4.20,-1.1,2.03),M['cream'],.19,rot=(-.14,0,0))
+screen('left_monitor', (1.34,.91),(-4.20,-1.48,2.03),(-.14,0,0))
+box('left_monitor_visor',(1.92,.85,.20),(-4.20,-1.18,2.72),M['cream_l'],.10)
+box('left_keyboard_shelf',(1.92,.48,.11),(-4.20,-1.90,1.67),M['silver'],.06)
+keypad('left_console_keys',(-3.90,-1.94,1.75),(-math.pi/2,0,0),cols=6,rows=3)
+top_panel('left_console_readout',-4.72,-1.92,1.74,.34,.25)
+top_vent('left_console_vent',[(-3.27,-3.05),(-2.87,-2.62),(-2.81,-1.72)],1.58)
+for x in (-5.75,-3.8):
+    pipe('left_console_panel_seam'+str(x),[(x,-3.29,1.57),(x,-2.45,1.57),(x-.3,-2.02,1.57)],.013,M['gun'],.13)
+# Rear tall shell with attached vertical terminal and articulated red couplers.
+box('left_cabinet',(1.95,1.32,3.8),(-5.5,3.7,1.9),M['cream'],.30)
+box('left_cabinet_terminal',(1.40,.58,1.63),(-5.30,2.87,1.4),M['cream_l'],.14)
+screen('left_cabinet_scr',(.62,.65),(-5.12,2.54,1.65),(0,0,0))
+keypad('left_cabinet_keys',(-5.66,2.53,1.29),(0,0,0),cols=3,rows=5)
+for k in range(2):
+    y=3.0+k*.4
+    pipe(f'left_cabinet_handle{k}',[(-4.9,y,2.38),(-4.45,y,2.38),(-4.1,y,1.96)],.12,M['cream_l'],.2)
+    along(f'left_cabinet_red{k}',(-4.65,y,2.12),(-4.35,y,1.96),.10,M['red'])
+for c in [(-3.6,1.1,1.0),(-2.40,.95,.9),(-3.8,2.3,1.0),(-3.95,-1.9,1.6),(-5.5,3.7,1.3)]:
+    collider(*c)
 
 # ================================================================ 右侧设备组
 # R1 仪表臂：底座 + 伸向走道的臂 + 圆形表盘。
 box('right_gauge_base', (1.2, 1.1, 1.6), (3.3, 1.4, .8), M['cream'], bevel=.18)
-box('right_gauge_arm', (1.5, .7, .36), (2.5, 1.05, 1.3), M['cream_l'], bevel=.12, rot=(0, 0, .35))
-cyl('right_gauge_dial_body', .42, .22, (1.85, .78, 1.45), M['cream_l'], bevel=.04)
-cyl('right_gauge_dial_face', .32, .04, (1.85, .78, 1.58), M['gun'], bevel=.01)
-torus('right_gauge_dial_ring', .27, .018, (1.85, .78, 1.6), M['glow'])
-cyl('right_gauge_dial_hub', .1, .05, (1.85, .78, 1.6), M['silver'], bevel=.01)
-screen('right_gauge_scr', (.42, .16), (1.95, .36, 1.32), (-.3, 0, .35))
-# R2 右侧大机组：圆润机身 + 青色横纹灯 + 顶部面板。
-box('right_machine_body', (3.0, 2.6, 1.6), (4.2, -.9, .8), M['cream_l'], bevel=.3)
-box('right_machine_top', (2.6, 2.2, .3), (4.3, -.8, 1.7), M['cream'], bevel=.12)
-lamp('right_lamp', (2.5, -1.3), math.radians(210), .55, 1.3, .7, M['glow'])
-screen('right_machine_scr', (.5, .32), (3.35, .1, 1.9), (-.6, 0, -.3))
-keypad('right_machine_keys', (3.9, -.2, 1.9), (-.6, 0, -.3), cols=3)
-vents('right_machine_vents', (2.9, -2.25, 0), (5.4, -2.25, 0), .9, 14)
-# R3 前右红色横纹灯机组。
-box('right_red_body', (2.0, 1.6, 1.4), (3.2, -3.0, .7), M['cream'], bevel=.25)
-lamp('right_red_lamp', (2.6, -3.0), math.radians(235), .6, 1.25, .55, M['red'])
-# R4 前中右控制台：斜面百叶 + 正面键盘与屏幕。
-# 立在地坑里，顶面比走道高 1.6。
-box('front_console_body', (1.5, 1.3, 3.3), (1.15, -3.2, -.05), M['cream_l'], bevel=.3)
-box('front_console_slope', (1.35, .9, .2), (1.15, -2.8, 1.62), M['cream'], bevel=.08, rot=(-.35, 0, 0))
-vents('front_console_vents', (.65, -2.7, 0), (1.65, -2.7, 0), 1.72, 10)
-keypad('front_console_keys', (1.5, -3.88, 1.2), (0, 0, 0), cols=3)
-screen('front_console_scr', (.42, .34), (.85, -3.88, 1.1), (0, 0, 0))
-box('front_console_glow', (1.1, .03, .04), (1.15, -3.87, .72), M['glow'], bevel=.01)
-vents('front_console_face_vents', (.5, -3.87, 0), (1.8, -3.87, 0), .45, 9)
+box('right_gauge_arm', (1.5, .8, .4), (3.05, .8, .95), M['cream_l'], bevel=.14, rot=(0, 0, .35))
+cyl('right_gauge_dial_body', .58, .3, (2.4, .5, 1.1), M['cream_l'], bevel=.05)
+cyl('right_gauge_dial_face', .45, .05, (2.4, .5, 1.27), M['gun'], bevel=.01)
+torus('right_gauge_dial_ring', .38, .022, (2.4, .5, 1.3), M['glow'])
+cyl('right_gauge_dial_hub', .13, .06, (2.4, .5, 1.3), M['silver'], bevel=.01)
+cyl('right_gauge_pedestal', .4, 1.0, (2.4, .5, .45), M['cream'], bevel=.04)
+box('right_gauge_screen_housing',(.70,.40,.37),(2.45,.055,.98),M['cream_l'],.10,rot=(0,0,.15))
+screen('right_gauge_scr', (.55, .2), (2.45, -.16, 1.0), (-.3, 0, .15))
+for k in range(32):
+    a=k*math.tau/32
+    box(f'right_gauge_tick{k}',(.016,.055,.012),(2.4+.34*math.cos(a),.5+.34*math.sin(a),1.305),
+        M['glow'] if k%4==0 else M['silver'],.003,rot=(0,0,a-math.pi/2))
+along('right_gauge_needle',(2.4,.5,1.34),(2.18,.68,1.34),.018,M['glow'])
+# R2 segmented lower deck, raised twin rails framing the cyan drum.
+right_outline=[(2.52,.30),(3.3,.83),(5.85,.83),(6.1,-2.32),(3.3,-2.32),(2.72,-1.75),(2.48,-.7)]
+deck('right_machine',right_outline,1.16,.66)
+lamp('right_lamp',(3.22,-1.18),math.radians(215),.91,1.53,.86,M['glow'],spread=math.radians(70))
+for k,x in enumerate((2.90,4.03)):
+    shell(f'right_guard{k}',[(x-.14,-1.75),(x+.14,-1.75),(x+.53,-.83),(x+.67,.24),(x+.36,.39),(x+.12,-.75)],
+          1.36,1.69,M['cream'],.11)
+top_panel('right_machine_scr',4.14,.15,1.42,.58,.65)
+top_vent('right_machine_vent',[(4.76,-1.97),(4.76,-.20),(4.45,.55)],1.41)
+# copper harness follows the back edge, inset alongside the large tube.
+for k in range(2):
+    pipe(f'right_top_copper{k}',[(3.24,2.50,1.64),(3.24,1.95,1.64),(4.47,1.95,1.64),(4.87,.3,1.64),
+                               (5.5,-.55,1.64)],.045,M['brass'],.16)
+# Red bank sits between two substantial elbow shaped guards at the foreground.
+deck('right_red',[(2.50,-2.13),(4.83,-2.13),(5.3,-3.8),(2.26,-4.0)],1.03,.69)
+lamp('right_red_lamp',(3.16,-2.93),math.radians(230),1.0,1.59,.86,M['red'])
+for x in (2.49,3.73):
+    shell('right_red_guard'+str(x),[(x,-3.6),(x+.29,-3.6),(x+.64,-2.60),(x+.6,-2.23),(x+.28,-2.2),(x+.2,-2.67)],
+          1.44,1.79,M['cream_l'],.13)
+# Front console follows the diagonal pit rim, with controls recessed into its sloping surface.
+front=[(.46,-4.0),(1.89,-4.0),(2.48,-2.54),(2.18,-2.03),(1.5,-2.03),(.6,-3.15)]
+deck('front_console',front,1.18,1.70)
+top_panel('front_console_scr',1.18,-3.17,1.46,.38,.72)
+keypad('front_console_keys',(1.71,-2.51,1.47),(-math.pi/2,0,0),cols=4,rows=5)
+top_vent('front_console_vent',[(.65,-3.70),(.78,-3.1),(1.15,-2.59)],1.44)
 # R5 大玻璃管：从反应堆右后上方斜向右前方，内有蓝、橙能量棒。
-S, E = Vector((2.4, 3.3, 4.3)), Vector((6.6, -.8, 2.1))
+S, E = Vector((3.0, 3.3, 3.8)), Vector((6.6, -.8, 1.6))
 D = (E - S).normalized()
 side = D.cross(Vector((0, 0, 1))).normalized()
 up = side.cross(D).normalized()
-along('tube_glass', S, E, .78, M['glass'], verts=56)
-along('energy_blue', S + D * .3 + up * .3 + side * .15, E - D * .1 + up * .3 + side * .15, .07, M['blue'])
-along('energy_orange', S + D * .3 - up * .25 - side * .2, E - D * .1 - up * .25 - side * .2, .05, M['orange'])
-along('tube_back_housing', S - D * 1.1, S + D * .4, 1.02, M['cream'])
-along('tube_back_cap', S - D * 1.2, S - D * 1.1, .8, M['gun'])
-along('tube_back_ring', S + D * .35, S + D * .5, .86, M['brass'])
-along('tube_front_ring', E - D * .15, E + D * .1, .88, M['cream_l'])
+along('tube_glass', S, E, .65, M['glass'], verts=56)
+along('energy_blue', S + D * .3 + up * .26 + side * .13, E - D * .1 + up * .26 + side * .13, .06, M['blue'])
+along('energy_orange', S + D * .3 - up * .21 - side * .17, E - D * .1 - up * .21 - side * .17, .045, M['orange'])
+along('tube_back_housing', S - D * 1.1, S + D * .4, .85, M['cream'])
+along('tube_back_cap', S - D * 1.2, S - D * 1.1, .68, M['gun'])
+along('tube_back_ring', S + D * .35, S + D * .5, .72, M['brass'])
+torus('tube_front_ring', .69, .095, E, M['cream_l'], D.to_track_quat('Z','Y').to_euler())
 for k, t in enumerate((.35, .7)):
     p = S.lerp(E, t)
-    along(f'tube_band_{k}', p - D * .06, p + D * .06, .82, M['silver'])
+    torus(f'tube_band_{k}', .655, .042, p, M['silver'], D.to_track_quat('Z','Y').to_euler())
 mid = S.lerp(E, .55)
 box('tube_saddle', (1.0, 1.0, mid.z - 1.75), (mid.x, mid.y, (mid.z + 1.75) / 2 - .2), M['cream'], bevel=.15,
     rot=(0, 0, math.atan2(D.y, D.x)))
-box('right_back_machine', (2.0, 2.4, 5.2), (5.3, 4.1, 2.6), M['cream'], bevel=.25)
-cyl('right_back_port', .55, .1, (5.3, 2.86, 3.3), M['gun'], rot=(math.pi / 2, 0, 0), bevel=.02)
-torus('right_back_port_ring', .5, .04, (5.3, 2.86 - .04, 3.3), M['glow'], rot=(math.pi / 2, 0, 0))
+box('right_back_machine', (2.0, 2.4, 2.0), (5.3, 4.1, 1.0), M['cream'], bevel=.25)
+# Segmented armored socket, bolt ring and A-shaped support cradle.
+for k in range(8):
+    a=k*math.tau/8
+    radial=side*math.cos(a)+up*math.sin(a)
+    q=S-D*.15+radial*.83
+    along(f'tube_socket_bolt{k}',q-D*.06,q+D*.06,.073,M['gun'],verts=20)
+    along(f'tube_socket_bolt_inset{k}',q+D*.061,q+D*.067,.034,M['silver'],verts=16)
+    along(f'tube_housing_seam{k}',S-D*.95+radial*.852,S+D*.05+radial*.852,.012,M['gun'])
+for k,sg in enumerate((-1,1)):
+    q=S+D*.36+side*sg*.71
+    foot=Vector((q.x+sg*.23,q.y,1.44))
+    top=q+Vector((0,0,-.13))
+    axis=top-foot
+    box(f'tube_cradle{k}',(.32,.46,axis.length),(foot+top)/2,M['cream_l'],.08,
+        rot=axis.to_track_quat('Z','Y').to_euler())
+    box(f'tube_cradle_foot{k}',(.63,.75,.14),(foot.x,foot.y,1.45),M['cream'],.07)
+# long narrow highlight on the glass makes its cylindrical silhouette legible.
+along('tube_glass_highlight',S+D*.52+up*.63,E-D*.18+up*.63,.018,M['silver'])
 light(S.lerp(E, .5), (.35, .6, 1.), 14, 6)
 light(S.lerp(E, .8), (1., .55, .2), 8, 4)
-for c in [(1.85, .78, .5), (3.3, 1.4, .8), (4.2, -.9, 1.5), (3.2, -3.0, 1.1), (1.15, -3.2, .8), (PORT[0], PORT[1], .48)]:
+for c in [(2.4, .5, .62), (3.3, 1.4, .8), (4.2, -.9, 1.5), (3.2, -3.0, 1.1), (1.15, -3.2, .8), (PORT[0], PORT[1], .48)]:
     collider(c[0], c[1], c[2])
 
 # ================================================================ 元数据
 META['walk'] = {'minX': WX0 + .1, 'maxX': WX1 - .1, 'minY': WY0 + .1, 'maxY': 2.4}
-META['spawn'] = {'x': 0., 'y': -1.0}
+META['spawn'] = {'x': 0., 'y': -.6}
 META['animated']['flame_core'] = {'x': RCX, 'y': RCY, 'z': 2.05}
 
 

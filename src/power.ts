@@ -22,6 +22,9 @@ import {
 } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 import { loadProp, spawn } from './props';
+import { makeCollision } from './powerMovement';
+import { attachCompanions, preloadCompanions } from './companions';
+import { createBackpack } from './backpack';
 
 interface Meta {
   colliders: { x: number; y: number; r: number }[];
@@ -40,7 +43,6 @@ const hud = document.getElementById('hud') as HTMLElement;
 const params = new URLSearchParams(location.search);
 const refMode = params.has('ref');
 const dbg = params.get('cam');
-const PLAYER_R = 0.32;
 // Blender(x,y,z) -> Babylon(-x,z,-y)
 const toB = (x: number, y: number, z: number) => new Vector3(-x, z, -y);
 
@@ -67,11 +69,15 @@ function tuneMaterials() {
     } else if (n === 'pw_grate') {
       mat.environmentIntensity = 0.4;
     } else if (n === 'pw_glass') {
-      mat.alpha = 0.26;
+      mat.alpha = 0.30;
+      mat.useAlphaFresnel = true;
+      mat.useLinearAlphaFresnel = true;
+      mat.albedoColor = new Color3(0.10, 0.14, 0.19);
+      mat.metallic = 0.65;
       mat.roughness = 0.04;
       mat.subSurface.isRefractionEnabled = false;
       mat.backFaceCulling = false;
-      mat.environmentIntensity = 1.2;
+      mat.environmentIntensity = 1.5;
     } else if (n === 'pw_flame') {
       // 只保留自发光，避免反照率被灯光照亮后冲淡橙色。
       mat.albedoTexture = null;
@@ -132,38 +138,14 @@ function animate(meshes: AbstractMesh[], coreLights: PointLight[]) {
   });
 }
 
-function makeCollision(meta: Meta) {
-  const circles = meta.colliders.map((c) => ({ x: -c.x, z: -c.y, r: c.r }));
-  const w = meta.walk;
-  const box = { minX: -w.maxX, maxX: -w.minX, minZ: -w.maxY, maxZ: -w.minY };
-  // 小步前进后把位置推出圆形障碍并夹回走道，碰到圆弧时自然沿切线滑行。
-  return (p: Vector3, dx: number, dz: number) => {
-    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.08));
-    for (let i = 0; i < steps; i++) {
-      p.x += dx / steps;
-      p.z += dz / steps;
-      for (const c of circles) {
-        const ox = p.x - c.x;
-        const oz = p.z - c.z;
-        const d = Math.hypot(ox, oz);
-        const min = c.r + PLAYER_R;
-        if (d < min && d > 1e-6) {
-          p.x = c.x + (ox / d) * min;
-          p.z = c.z + (oz / d) * min;
-        }
-      }
-      p.x = Math.min(box.maxX - PLAYER_R, Math.max(box.minX + PLAYER_R, p.x));
-      p.z = Math.min(box.maxZ - PLAYER_R, Math.max(box.minZ + PLAYER_R, p.z));
-    }
-  };
-}
 
 async function main() {
   hud.innerHTML = '<span style="font-size:22px;font-weight:700;letter-spacing:2px">动力室 I</span><br>加载中…';
   const meta: Meta = await (await fetch('/models/power/power_room.json')).json();
   const [res] = await Promise.all([
     ImportMeshAsync('/models/power/power_room.glb', scene),
-    refMode ? Promise.resolve() : loadProp(scene, 'hy/robot'),
+    refMode ? Promise.resolve() : loadProp(scene, 'player/seer_robot'),
+    refMode ? Promise.resolve() : preloadCompanions(scene),
   ]);
   const meshes = res.meshes;
   const walls: Record<string, AbstractMesh[]> = { left: [], right: [], back: [] };
@@ -174,7 +156,9 @@ async function main() {
   }
   tuneMaterials();
   // 必须在创建灯光前实例化，否则机器人网格拿不到光源列表。
-  const player = refMode ? null : spawn(scene, 'hy/robot', toB(meta.spawn.x, meta.spawn.y, 0), { height: 1.25, rotY: Math.PI });
+  const player = refMode ? null : spawn(scene, 'player/seer_robot', toB(meta.spawn.x, meta.spawn.y, 0), { height: 1.25, rotY: Math.PI });
+  // 伙伴也要在灯光创建前实例化。
+  const companions = player ? attachCompanions(scene, player.node, { playerHeight: 1.25 }) : null;
 
   const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0.2), scene);
   hemi.diffuse = new Color3(0.78, 0.84, 0.95);
@@ -204,10 +188,10 @@ async function main() {
   shadow.darkness = 0.45;
   for (const m of meshes) if (!wallGroup(m.name) && m.getTotalVertices() > 0 && (m.material?.alpha ?? 1) >= 1) shadow.addShadowCaster(m);
 
-  // 参考视角：与 Blender 预览相机一致（90° 水平视场、约 52° 俯角）。
+  // 参考视角：原图为 16:9，垂直视场约 48.9°（旧参考图两侧有黑边，不能按整幅宽度算水平视场）。
   const cam = new ArcRotateCamera('cam', Math.PI / 2, 0.92, 9.2, toB(0, 0.9, 1.0), scene);
-  cam.fovMode = Camera.FOVMODE_HORIZONTAL_FIXED;
-  cam.fov = Math.PI / 2;
+  cam.fovMode = Camera.FOVMODE_VERTICAL_FIXED;
+  cam.fov = 0.854;
   cam.minZ = 0.1;
   cam.maxZ = 200;
   cam.wheelPrecision = 40;
@@ -224,7 +208,7 @@ async function main() {
   cam.attachControl(canvas, true);
 
   if (!refMode) {
-    cam.fov = 1.35;
+    cam.fov = 0.95;
     cam.radius = 5.2;
     cam.beta = 0.88;
     cam.lowerRadiusLimit = 3;
@@ -234,12 +218,9 @@ async function main() {
     if (!player) throw new Error('robot not spawned');
     for (const m of player.meshes) {
       shadow.addShadowCaster(m);
-      // 混元机器人金属度贴图偏高，封闭室内缺少天空反射会发黑；只在本场景压低。
-      if (m.material instanceof PBRMaterial) {
-        m.material.metallic = 0.25;
-        m.material.roughness = 0.7;
-      }
     }
+    if (companions) for (const m of companions.meshes) shadow.addShadowCaster(m);
+    if (companions) createBackpack(companions);
     const pos = player.node.position;
     const move = makeCollision(meta);
     const keys = new Set<string>();
@@ -326,7 +307,7 @@ async function main() {
 
   document.title = '赛尔号 · 动力室 I';
   hud.innerHTML = '<span style="font-size:22px;font-weight:700;letter-spacing:2px;color:#ffd38a">动力室 I</span><br>' +
-    (refMode ? '参考视角 · 拖动旋转 · 滚轮缩放' : '第三人称 · WASD 移动 · Shift 加速 · 拖动旋转视角');
+    (refMode ? '参考视角 · 拖动旋转 · 滚轮缩放' : '第三人称 · WASD 移动 · Shift 加速 · B 精灵背包 · 拖动旋转视角');
   const sw = document.createElement('a');
   sw.className = 'invention-view-switch';
   sw.href = refMode ? '?scene=power' : '?scene=power&ref=1';

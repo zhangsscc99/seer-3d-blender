@@ -1,0 +1,9 @@
+{
+  "asset": "public/models/teleport/teleport_room.glb",
+  "mesh_count": 472,
+  "vertices": 101924,
+  "triangles": 169664,
+  "nono_parts": {},
+  "collider_count": 10,
+  "issues": []
+}

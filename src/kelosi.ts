@@ -1,5 +1,6 @@
 import {
   ArcRotateCamera,
+  Camera,
   CascadedShadowGenerator,
   Color3,
   Color4,
@@ -9,6 +10,7 @@ import {
   Engine,
   HemisphericLight,
   ImageProcessingConfiguration,
+  ImportMeshAsync,
   Mesh,
   MeshBuilder,
   PBRMaterial,
@@ -17,47 +19,46 @@ import {
   RenderTargetTexture,
   Scene,
   SSAO2RenderingPipeline,
+  ShaderMaterial,
   StandardMaterial,
   Texture,
   TransformNode,
+  Vector2,
   Vector3,
 } from '@babylonjs/core';
-import {
-  createTerrain,
-  heightAt,
-  pitDistance,
-  PIT_DEPTH,
-  riverCenter,
-  waterLevel,
-} from './terrain';
-import { loadProp, spawn, PropName } from './props';
+import '@babylonjs/loaders/glTF';
+import { loadProp, spawn } from './props';
+import { attachCompanions, preloadCompanions } from './companions';
+import { createBackpack } from './backpack';
+import { KelosiMeta, makeGround, makeMovement } from './kelosiMovement';
 
 const canvas = document.getElementById('app') as HTMLCanvasElement;
 const engine = new Engine(canvas, true, { antialias: true, powerPreference: 'high-performance' });
 engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio, 2));
 const scene = new Scene(engine);
-scene.clearColor = new Color4(0.95, 0.42, 0.22, 1);
+scene.clearColor = new Color4(1.0, 0.68, 0.40, 1);
 scene.fogMode = Scene.FOGMODE_EXP2;
-scene.fogColor = new Color3(0.98, 0.55, 0.32);
-scene.fogDensity = 0.0055;
+scene.fogColor = new Color3(0.95, 0.55, 0.34);
+scene.fogDensity = 0.0026;
 
-let seed = 20260930;
-const rnd = () => {
-  seed = (seed * 1664525 + 1013904223) >>> 0;
-  return seed / 4294967296;
-};
-const range = (a: number, b: number) => a + rnd() * (b - a);
+const hud = document.getElementById('hud') as HTMLElement;
+const params = new URLSearchParams(location.search);
+const refMode = params.has('ref');
+const dbg = params.get('cam');
+// 元数据里的点光照沿用 (x, -z, y) 的 Blender 风格坐标。
+const toB = (x: number, y: number, z: number) => new Vector3(x, z, -y);
 
 function createSky() {
   const tex = new DynamicTexture('skyTex', { width: 16, height: 512 }, scene, true);
   const ctx = tex.getContext() as CanvasRenderingContext2D;
   const g = ctx.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0.0, '#b3261e');
-  g.addColorStop(0.35, '#e8541f');
-  g.addColorStop(0.55, '#ff8a3d');
-  g.addColorStop(0.62, '#ffc06a');
-  g.addColorStop(0.66, '#ff9a4a');
-  g.addColorStop(1.0, '#c9552a');
+  g.addColorStop(0.0, '#c53c43');
+  g.addColorStop(0.28, '#e85a3f');
+  g.addColorStop(0.52, '#ff8f4f');
+  g.addColorStop(0.68, '#ffc270');
+  g.addColorStop(0.76, '#ffe4a6');
+  g.addColorStop(0.84, '#ffb66b');
+  g.addColorStop(1.0, '#f08c52');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 16, 512);
   tex.update();
@@ -74,30 +75,64 @@ function createSky() {
 }
 
 function createWaterNormal() {
-  const N = 256;
+  // 可平铺的多倍频值噪声：比正弦条纹更接近自然水面的碎波，
+  // 同时沿河道方向拉长，避免出现规则排列的高光斑点。
+  const N = 512;
   const tex = new DynamicTexture('waterN', { width: N, height: N }, scene, true);
   const ctx = tex.getContext() as CanvasRenderingContext2D;
   const img = ctx.createImageData(N, N);
-  const h = (u: number, v: number) => {
-    const a = Math.PI * 2;
-    return (
-      Math.sin(u * a * 3 + Math.sin(v * a * 2) * 1.2) * 0.5 +
-      Math.sin(v * a * 4 - u * a * 2) * 0.3 +
-      Math.sin((u + v) * a * 6) * 0.2
-    );
+  const hash = (x: number, y: number) => {
+    let h = Math.imul(x, 374761393) + Math.imul(y, 668265263);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
   };
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const wrap = (v: number, p: number) => ((v % p) + p) % p;
+  const noise = (x: number, y: number, px: number, py: number) => {
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const fx = smooth(x - x0);
+    const fy = smooth(y - y0);
+    const xa = wrap(x0, px);
+    const xb = wrap(x0 + 1, px);
+    const ya = wrap(y0, py);
+    const yb = wrap(y0 + 1, py);
+    const a = hash(xa, ya);
+    const b = hash(xb, ya);
+    const c = hash(xa, yb);
+    const d = hash(xb, yb);
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+  };
+  const height = new Float32Array(N * N);
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       const u = x / N;
       const v = y / N;
-      const e = 1 / N;
-      const dx = (h(u + e, v) - h(u - e, v)) * 6;
-      const dy = (h(u, v + e) - h(u, v - e)) * 6;
+      let sum = 0;
+      let amp = 0.55;
+      let f = 4;
+      for (let o = 0; o < 4; o++) {
+        // 只做极轻微的顺流拉长；拉得太长会让高光连成平行的“拉丝”。
+        sum += amp * noise(u * f, v * f * 1.12, f, f * 1.12);
+        amp *= 0.5;
+        f *= 2;
+      }
+      height[y * N + x] = sum;
+    }
+  }
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const xl = height[y * N + ((x - 1 + N) % N)];
+      const xr = height[y * N + ((x + 1) % N)];
+      const yu = height[((y - 1 + N) % N) * N + x];
+      const yd = height[((y + 1) % N) * N + x];
+      const dx = (xr - xl) * 16;
+      const dy = (yd - yu) * 16;
       const len = Math.hypot(dx, dy, 1);
       const i = (y * N + x) * 4;
       img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
       img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
-      img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+      img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
       img.data[i + 3] = 255;
     }
   }
@@ -108,357 +143,569 @@ function createWaterNormal() {
   return tex;
 }
 
-function createRiver() {
-  const w = MeshBuilder.CreateGround('river', { width: 240, height: 14, subdivisions: 1 }, scene);
-  w.position.set(0, waterLevel(), riverCenter(0));
-  const n = createWaterNormal();
-  n.uScale = 30;
-  n.vScale = 2;
-  const mat = new PBRMaterial('waterMat', scene);
-  mat.albedoColor = new Color3(0.1, 0.62, 0.95);
-  mat.metallic = 0;
-  mat.roughness = 0.08;
-  mat.alpha = 0.78;
-  mat.bumpTexture = n;
-  mat.bumpTexture.level = 0.7;
-  mat.emissiveColor = new Color3(0.02, 0.18, 0.32);
-  mat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
-  mat.backFaceCulling = false;
-  w.material = mat;
-  scene.onBeforeRenderObservable.add(() => {
-    const t = performance.now() * 0.00006;
-    n.uOffset = t * 3;
-    n.vOffset = t;
-  });
-  w.isPickable = false;
-  return w;
+/**
+ * 把河床深度烘成一张贴图：让水体着色、浅滩透明感和岸线泡沫都由真实地形决定，
+ * 而不是靠河心距离或几何泡沫条近似。R 通道存 0..MAX_DEPTH 的归一化深度。
+ */
+const WATER_MAX_DEPTH = 2.4;
+function createWaterDepth(
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+  waterLevel: number,
+  getGround: (x: number, z: number) => number,
+  shallows: { x: number; z: number; r: number }[],
+) {
+  const W = 1024;
+  const H = 256;
+  const sstep = (a: number, b: number, v: number) => {
+    const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  const tex = new DynamicTexture('waterDepth', { width: W, height: H }, scene, true);
+  tex.hasAlpha = false;
+  const ctx = tex.getContext() as CanvasRenderingContext2D;
+  const img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    const z = minZ + ((y + 0.5) / H) * (maxZ - minZ);
+    for (let x = 0; x < W; x++) {
+      const wx = minX + ((x + 0.5) / W) * (maxX - minX);
+      let depth = Math.max(0, Math.min(WATER_MAX_DEPTH, waterLevel - getGround(wx, z)));
+      // 踏脚石顶面高出水面：把石顶烘成零深度，水线泡沫就会自然绕石一圈。
+      for (const s of shallows) {
+        const d = Math.hypot(wx - s.x, z - s.z);
+        if (d < s.r + 0.9) depth *= 1 - sstep(s.r * 0.5, s.r + 0.85, d);
+      }
+      const i = (y * W + x) * 4;
+      const v = Math.round((depth / WATER_MAX_DEPTH) * 255);
+      img.data[i] = v;
+      img.data[i + 1] = v;
+      img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  tex.update();
+  tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+  tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+  return tex;
 }
 
-const hud = document.getElementById('hud') as HTMLElement;
-const setStatus = (t: string) => (hud.textContent = t);
+interface RefCameraMeta {
+  position: number[];
+  target: number[];
+  fov: number;
+  fovMode?: string;
+}
+
+function arcFromReference(ref: RefCameraMeta) {
+  const target = new Vector3(ref.target[0], ref.target[1], ref.target[2]);
+  const offset = new Vector3(ref.position[0], ref.position[1], ref.position[2]).subtract(target);
+  const radius = offset.length();
+  return {
+    target,
+    radius,
+    alpha: Math.atan2(offset.z, offset.x),
+    beta: Math.acos(Math.max(-1, Math.min(1, offset.y / Math.max(radius, 1e-6)))),
+  };
+}
 
 async function main() {
-  setStatus('克洛斯星 · 加载中…');
-  const sky = createSky();
+  document.title = '赛尔号 · 克洛斯星';
+  hud.innerHTML = '<span style="font-size:22px;font-weight:700;letter-spacing:2px">克洛斯星</span><br>加载中…';
 
-  const sun = new DirectionalLight('sun', new Vector3(-0.55, -0.75, 0.35).normalize(), scene);
-  sun.position = new Vector3(60, 80, -40);
-  sun.diffuse = new Color3(1, 0.82, 0.6);
-  sun.specular = new Color3(1, 0.85, 0.7);
-  sun.intensity = 3.2;
-  const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene);
-  hemi.diffuse = new Color3(1, 0.72, 0.5);
-  hemi.groundColor = new Color3(0.35, 0.22, 0.3);
-  hemi.intensity = 0.7;
+  const meta: KelosiMeta & { spawn: { x: number; y: number; heading?: number }; referenceCamera: RefCameraMeta } =
+    await (await fetch('/models/kelosi/kelosi_outdoor.json')).json();
+  const sky = createSky();
+  const groundAt = makeGround(meta);
+
+  const [res] = await Promise.all([
+    ImportMeshAsync('/models/kelosi/kelosi_outdoor.glb', scene),
+    refMode ? Promise.resolve() : loadProp(scene, 'player/seer_robot'),
+    refMode ? Promise.resolve() : preloadCompanions(scene),
+  ]);
+  const meshes = res.meshes;
+  for (const m of meshes) {
+    m.receiveShadows = true;
+    m.isPickable = false;
+  }
+
+  // ------------------------------------------------------------ 材质与光照
+  const waterNormal = createWaterNormal();
+  const pulsing: { mat: PBRMaterial; base: number; hz: number; amount: number }[] = [];
+
+  for (const mat of scene.materials) {
+    if (!(mat instanceof PBRMaterial)) continue;
+    const n = mat.name;
+    if (n === 'k_water') {
+      // 水体在下面替换成带反射/折射和动态波浪的 WaterMaterial。
+      continue;
+    } else if (n === 'k_crystal_glow' || n === 'k_crystal_light') {
+      mat.albedoColor = new Color3(n.endsWith('light') ? 1.0 : 0.92, 0.48, 0.025);
+      mat.emissiveColor = new Color3(1.0, n.endsWith('light') ? 0.62 : 0.42, 0.02);
+      mat.emissiveIntensity = n.endsWith('light') ? 1.25 : 0.95;
+      mat.roughness = 0.24;
+      mat.metallic = 0;
+      pulsing.push({ mat, base: mat.emissiveIntensity, hz: n.endsWith('light') ? 0.52 : 0.42, amount: 0.28 });
+    } else if (n === 'k_teleport_glow') {
+      mat.albedoColor = new Color3(0.10, 0.65, 0.80);
+      mat.emissiveColor = new Color3(0.18, 0.88, 1.0);
+      mat.emissiveIntensity = 1.85;
+      mat.roughness = 0.2;
+      pulsing.push({ mat, base: 1.85, hz: 0.95, amount: 0.36 });
+    } else if (n === 'k_portal_inner') {
+      mat.albedoColor = new Color3(0.02, 0.18, 0.26);
+      mat.emissiveColor = new Color3(0.06, 0.50, 0.68);
+      mat.emissiveIntensity = 0.85;
+      mat.roughness = 0.18;
+      mat.metallic = 0.1;
+    } else if (n === 'k_platform_white' || n === 'k_platform_silver') {
+      mat.metallic = n.endsWith('silver') ? 0.52 : 0.12;
+      mat.roughness = n.endsWith('silver') ? 0.32 : 0.48;
+      mat.environmentIntensity = 0.9;
+    } else if (n.startsWith('bg_mountain')) {
+      mat.metallic = 0;
+      mat.roughness = 0.96;
+      mat.environmentIntensity = 0.1;
+      mat.unlit = true;
+    } else if (n.startsWith('k_')) {
+      if ((mat.metallic ?? 0) > 0.4) mat.metallic = 0.1;
+      if ((mat.roughness ?? 1) < 0.45) mat.roughness = 0.65;
+      mat.environmentIntensity = Math.min(mat.environmentIntensity, 0.6);
+    }
+  }
+
+  // 水体：自写水面着色器。河床深度由高度场烘成深度图，用来决定水色、
+  // 浅滩透明感和岸线泡沫；碎波使用世界坐标的多尺度法线，避免网格 UV
+  // 被拉成长条。比通用 WaterMaterial 的整场景 RTT 更快，也不会把
+  // 暖色河岸反射成泥灰色。
+  const waterMesh = meshes.find((m) => m.name === 'water_river' || m.material?.name === 'k_water') as Mesh | undefined;
+  let water: ShaderMaterial | null = null;
+  if (waterMesh) {
+    waterMesh.computeWorldMatrix(true);
+    const wb = waterMesh.getBoundingInfo().boundingBox;
+    const depthTex = createWaterDepth(
+      wb.minimumWorld.x,
+      wb.minimumWorld.z,
+      wb.maximumWorld.x,
+      wb.maximumWorld.z,
+      meta.waterLevel,
+      groundAt,
+      meta.shallows ?? [],
+    );
+    water = new ShaderMaterial(
+      'k_water',
+      scene,
+      {
+        vertexSource: `
+          precision highp float;
+          attribute vec3 position;
+          uniform mat4 world;
+          uniform mat4 worldViewProjection;
+          varying vec3 vWorld;
+          void main(void) {
+            vec4 wp = world * vec4(position, 1.0);
+            vWorld = wp.xyz;
+            gl_Position = worldViewProjection * vec4(position, 1.0);
+          }
+        `,
+        fragmentSource: `
+          precision highp float;
+          varying vec3 vWorld;
+          uniform sampler2D uNormalTex;
+          uniform sampler2D uDepthTex;
+          uniform float uTime;
+          uniform vec3 uCamPos;
+          uniform vec3 uSunDir;
+          uniform vec3 uSunColor;
+          uniform vec3 uFogColor;
+          uniform float uFogDensity;
+          uniform vec2 uWaterMin;
+          uniform vec2 uWaterSize;
+
+          void main(void) {
+            vec2 p = vWorld.xz;
+            // 三个尺度的碎波，整体沿 +x 顺流漂移。
+            vec2 f1 = p * 0.115 + vec2(-uTime * 0.085, uTime * 0.004);
+            vec2 f2 = p * 0.285 + vec2(-uTime * 0.190, uTime * 0.012);
+            vec2 f3 = p * 0.620 + vec2(-uTime * 0.340, uTime * 0.020);
+            vec3 n1 = texture2D(uNormalTex, f1).xyz * 2.0 - 1.0;
+            vec3 n2 = texture2D(uNormalTex, f2).xyz * 2.0 - 1.0;
+            vec3 n3 = texture2D(uNormalTex, f3).xyz * 2.0 - 1.0;
+            vec2 slope = n1.xy * 0.55 + n2.xy * 0.32 + n3.xy * 0.13;
+            // 低频涌浪，让高光不会完全平铺成布纹。
+            float swell = p.x * 0.22 + p.y * 0.41 + uTime * 0.85;
+            vec3 N = normalize(vec3(
+              slope.x * 0.42 + cos(swell) * 0.022,
+              1.0,
+              slope.y * 0.42 + sin(swell * 1.17) * 0.020
+            ));
+
+            vec3 V = normalize(uCamPos - vWorld);
+            float ndv = clamp(dot(N, V), 0.0, 1.0);
+
+            // 真实河床深度（由高度场预烘），并取深度梯度判断是否为真正的岸坡。
+            vec2 duv = (p - uWaterMin) / uWaterSize;
+            float depth = texture2D(uDepthTex, duv).r * 2.4;
+            vec2 texel = 1.6 / uWaterSize;
+            float dX = texture2D(uDepthTex, duv + vec2(texel.x, 0.0)).r - texture2D(uDepthTex, duv - vec2(texel.x, 0.0)).r;
+            float dZ = texture2D(uDepthTex, duv + vec2(0.0, texel.y)).r - texture2D(uDepthTex, duv - vec2(0.0, texel.y)).r;
+            // 约合米/米的河床坡度：平坦水下沙洲约 0.02，岸坡约 0.4。
+            float grad = length(vec2(dX * 3.4, dZ * 4.5));
+
+            vec3 bedTint = vec3(0.38, 0.31, 0.19);
+            vec3 shallow = vec3(0.075, 0.345, 0.315);
+            vec3 mid = vec3(0.018, 0.155, 0.205);
+            vec3 deep = vec3(0.006, 0.065, 0.115);
+            vec3 body = mix(bedTint, shallow, smoothstep(0.02, 0.55, depth));
+            body = mix(body, mid, smoothstep(0.25, 0.90, depth));
+            body = mix(body, deep, smoothstep(0.85, 1.75, depth));
+
+            // 天空反射：地平线保留夕阳暖边，稍高的反射方向转为冷蓝灰，
+            // 避免整条河变成和沙地一样的棕色。
+            vec3 R = reflect(-V, N);
+            float up = clamp(R.y, 0.0, 1.0);
+            vec3 c0 = vec3(0.98, 0.62, 0.38);
+            vec3 c1 = vec3(0.42, 0.44, 0.52);
+            vec3 c2 = vec3(0.18, 0.31, 0.50);
+            vec3 sky = mix(c0, c1, smoothstep(0.0, 0.22, up));
+            sky = mix(sky, c2, smoothstep(0.22, 0.85, up));
+            float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+            // 反射再亮也要保留水体本色，否则远处会像一条灰白的沙路。
+            vec3 col = mix(body, sky, clamp(fres * 1.10, 0.0, 0.58));
+
+            // 太阳碎光：宽高光铺出光路，窄高光叠加噪声形成闪烁颗粒。
+            vec3 L = normalize(-uSunDir);
+            vec3 H = normalize(L + V);
+            float sd = max(dot(N, H), 0.0);
+            float glitter = smoothstep(0.35, 0.75, texture2D(uNormalTex, f2 * 1.7 + f3 * 0.6).r);
+            float spec =
+              pow(sd, 260.0) * (0.45 + 1.9 * glitter) +
+              pow(sd, 42.0) * 0.045 +
+              pow(sd, 9.0) * 0.014;
+            col += uSunColor * spec;
+
+            // 岸线泡沫：只保留浅水区边缘的一条碎沫，浅滩本身用青绿色透出来。
+            float foamA = texture2D(uNormalTex, p * vec2(0.85, 1.05) + vec2(-uTime * 0.055, 0.0)).r;
+            float foamB = texture2D(uNormalTex, p * vec2(2.20, 1.35) + vec2(-uTime * 0.110, 0.03)).g;
+            float lace = foamA * 0.62 + foamB * 0.38;
+            float shore = 1.0 - smoothstep(0.010, 0.14, depth);
+            float slopeFoam = smoothstep(0.05, 0.28, grad);
+            // 大尺度补丁遮罩，避免浅滩边缘连成一整圈几何白环。
+            float patchMask = smoothstep(0.32, 0.60, texture2D(uNormalTex, p * 0.16 + vec2(-uTime * 0.01, 0.02)).g);
+            float foam = shore * slopeFoam * smoothstep(0.48, 0.64, lace) * 0.55 * mix(0.05, 1.0, patchMask);
+            // 水线处一条被噪声打断的细亮边。
+            foam += exp(-depth * 55.0) * slopeFoam * smoothstep(0.34, 0.55, lace) * 0.45 * mix(0.15, 1.0, patchMask);
+            foam = clamp(foam, 0.0, 1.0);
+            col = mix(col, vec3(0.87, 0.94, 0.93), foam * 0.58);
+
+            float dist = length(uCamPos - vWorld);
+            float fog = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
+            col = mix(col, uFogColor, fog);
+            gl_FragColor = vec4(col, 1.0);
+          }
+        `,
+      },
+      {
+        attributes: ['position'],
+        uniforms: [
+          'world',
+          'worldViewProjection',
+          'uTime',
+          'uCamPos',
+          'uSunDir',
+          'uSunColor',
+          'uFogColor',
+          'uFogDensity',
+          'uWaterMin',
+          'uWaterSize',
+        ],
+        samplers: ['uNormalTex', 'uDepthTex'],
+      },
+    );
+    water.setTexture('uNormalTex', waterNormal);
+    water.setTexture('uDepthTex', depthTex);
+    water.setFloat('uTime', 0);
+    water.setVector3('uCamPos', Vector3.Zero());
+    water.setVector3('uSunDir', new Vector3(-0.42, -0.86, 0.32).normalize());
+    water.setVector3('uSunColor', new Vector3(1.0, 0.93, 0.80));
+    water.setVector3('uFogColor', new Vector3(scene.fogColor.r, scene.fogColor.g, scene.fogColor.b));
+    water.setFloat('uFogDensity', scene.fogDensity);
+    water.setVector2('uWaterMin', new Vector2(wb.minimumWorld.x, wb.minimumWorld.z));
+    water.setVector2('uWaterSize', new Vector2(wb.maximumWorld.x - wb.minimumWorld.x, wb.maximumWorld.z - wb.minimumWorld.z));
+    water.backFaceCulling = true;
+    waterMesh.material = water;
+    waterMesh.receiveShadows = false;
+    waterMesh.renderingGroupId = 0;
+    waterMesh.isPickable = false;
+  }
+  const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0.12), scene);
+  hemi.diffuse = new Color3(0.72, 0.86, 1.0);
+  hemi.groundColor = new Color3(0.80, 0.46, 0.30);
+  hemi.intensity = 0.85;
+
+  const sun = new DirectionalLight('sun', new Vector3(-0.42, -0.86, 0.32).normalize(), scene);
+  sun.position = new Vector3(58, 96, -42);
+  sun.diffuse = new Color3(1.0, 0.91, 0.77);
+  sun.specular = new Color3(1.0, 0.92, 0.82);
+  sun.intensity = 1.90;
+
+  for (const l of (meta as unknown as { lights?: { x: number; y: number; z: number; color: number[]; power: number; range: number }[] }).lights ?? []) {
+    const p = new PointLight('glow', toB(l.x, l.y, l.z), scene);
+    p.diffuse = new Color3(l.color[0], l.color[1], l.color[2]);
+    p.intensity = l.power / 5.5;
+    p.range = l.range * 1.5;
+  }
 
   const probe = new ReflectionProbe('probe', 128, scene);
   probe.renderList!.push(sky);
   probe.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
   scene.environmentTexture = probe.cubeTexture;
-  scene.environmentIntensity = 0.9;
-
-  const terrain = await createTerrain(scene);
-  createRiver();
-
-  const hy: Record<string, { emissive?: number }> = {
-    pink_mound: {}, pink_root: {}, maneater: {}, crystal: { emissive: 0.9 }, lantern: { emissive: 0.35 },
-    portal: { emissive: 0.4 }, worm: {}, vine: {}, cliff: {}, rock: {}, tree: {}, bush: {},
-    grass: {}, blue_flower: { emissive: 0.3 }, mountain: {}, robot: {},
-  };
-  await Promise.all(Object.entries(hy).map(([n, o]) => loadProp(scene, `hy/${n}`, o)));
-
-  const casters: Mesh[] = [];
-  const place = (
-    name: PropName,
-    x: number,
-    z: number,
-    opts: Parameters<typeof spawn>[3] = {},
-    lift = 0,
-  ) => {
-    const y = heightAt(x, z) + lift;
-    const r = spawn(scene, `hy/${name}`, new Vector3(x, y, z), { rotY: rnd() * Math.PI * 2, ...opts });
-    if (castShadows) for (const m of r.meshes) casters.push(m as Mesh);
-    return r;
-  };
-  let castShadows = true;
-
-  const onLand = (x: number, z: number) =>
-    pitDistance(x, z) > 1.1 &&
-    Math.abs(z - riverCenter(x)) > 5.5 &&
-    Math.hypot(x, z - 5) < 76 &&
-    Math.hypot(x - 38, z + 2) > 7;
-
-  const scatter = (
-    name: PropName,
-    count: number,
-    box: [number, number, number, number],
-    size: [number, number],
-    by: 'height' | 'width' = 'height',
-  ) => {
-    let placed = 0;
-    for (let tries = 0; placed < count && tries < count * 30; tries++) {
-      const x = range(box[0], box[1]);
-      const z = range(box[2], box[3]);
-      if (!onLand(x, z)) continue;
-      const s = range(size[0], size[1]);
-      place(name, x, z, by === 'height' ? { height: s } : { width: s });
-      placed++;
-    }
-  };
-
-  const glowLights: PointLight[] = [];
-  const glowBase: number[] = [];
-  const glow = (x: number, y: number, z: number, color: Color3, intensity: number, rangeM: number) => {
-    const l = new PointLight(`glow${glowLights.length}`, new Vector3(x, y, z), scene);
-    l.diffuse = color;
-    l.intensity = intensity;
-    l.range = rangeM;
-    glowLights.push(l);
-    glowBase.push(intensity);
-    return l;
-  };
-
-  // 左侧粉色岩丘：肉质岩丘 + 蓝莓、触手根须、灯笼草
-  const mounds: [number, number, number][] = [[-44, 4, 9], [-36, 14, 7], [-50, 18, 8], [-40, -10, 7.5], [-56, -4, 9]];
-  for (const [x, z, w] of mounds) place('pink_mound', x, z, { width: w });
-  for (let i = 0; i < 9; i++) {
-    const a = rnd() * Math.PI * 2;
-    const [mx, mz] = mounds[i % mounds.length];
-    place('pink_root', mx + Math.cos(a) * 6, mz + Math.sin(a) * 6, { width: range(7, 11), rotY: a + Math.PI });
-  }
-  scatter('pink_root', 6, [-66, -32, -22, 24], [6, 10], 'width');
-  const lanterns: [number, number][] = [[-33, 2], [-47, -14], [-30, 18]];
-  for (const [x, z] of lanterns) {
-    const r = place('lantern', x, z, { height: range(2.6, 3.4) });
-    glow(x, heightAt(x, z) + r.height * 0.85, z, new Color3(1, 0.9, 0.4), 5, 9);
-  }
-  scatter('blue_flower', 18, [-70, -30, -22, 24], [1.2, 2]);
-  scatter('rock', 6, [-70, -30, -24, 24], [2.5, 4], 'width');
-  scatter('grass', 14, [-66, -32, -22, 24], [1.2, 1.8], 'width');
-
-  // 右侧绿色草地：传送台、食人花、盘绕藤蔓、树与灌木
-  const portalPos = new Vector3(38, 0, -2);
-  const portal = place('portal', portalPos.x, portalPos.z, { width: 8, rotY: 0 });
-  glow(portalPos.x, heightAt(portalPos.x, portalPos.z) + 2.5, portalPos.z, new Color3(0.4, 0.85, 1), 12, 20);
-  void portal;
-  place('maneater', 30, 12, { height: 3.2, rotY: -Math.PI * 0.75 });
-  place('maneater', 36, 15, { height: 2.8, rotY: -Math.PI * 0.6 });
-  const vines: [number, number][] = [[50, 20], [56, 14], [46, 24], [60, 22]];
-  for (const [x, z] of vines) place('vine', x, z, { height: range(5, 7) });
-  scatter('tree', 7, [40, 72, -26, 26], [7, 10]);
-  scatter('bush', 14, [26, 70, -24, 26], [2.4, 3.8], 'width');
-  scatter('grass', 60, [24, 72, -24, 26], [1.2, 2], 'width');
-  scatter('blue_flower', 10, [26, 70, -22, 24], [1.2, 1.8]);
-  scatter('rock', 5, [28, 70, -24, 24], [2.5, 4], 'width');
-
-  // 凹坑：分层崖壁环绕，坑底岩石，崖壁探出的粉色虫子
-  castShadows = false;
-  for (let i = 0; i < 34; i++) {
-    const a = (i / 34) * Math.PI * 2;
-    const d = 0.8;
-    const x = Math.cos(a) * 30 * d;
-    const z = Math.sin(a) * 21 * d;
-    if (Math.abs(z - riverCenter(x)) < 7) continue;
-    place('cliff', x, z, { height: PIT_DEPTH * range(0.75, 0.95), rotY: -a + Math.PI / 2 }, -PIT_DEPTH - heightAt(x, z));
-  }
-  castShadows = true;
-  for (let i = 0; i < 7; i++) {
-    const a = rnd() * Math.PI * 2;
-    const d = range(0.2, 0.6);
-    place('rock', Math.cos(a) * 30 * d, Math.sin(a) * 21 * d, { width: range(1.8, 3.2) });
-  }
-  const wormA = Math.PI * 0.42;
-  place('worm', Math.cos(wormA) * 30 * 0.8, Math.sin(wormA) * 21 * 0.8, { height: 3.5, rotY: -wormA - Math.PI / 2 });
-
-  // 河中发光水晶
-  const crystals: [number, number, number][] = [[4, 0, 3.6], [8, 1.5, 2.6], [6.5, -1.4, 2.2], [-20, 0.6, 3.2], [-24, -1, 2.4]];
-  for (const [cx, off, h] of crystals) {
-    const cz = riverCenter(cx) + off;
-    place('crystal', cx, cz, { height: h }, -0.3);
-    glow(cx, waterLevel() + 2.4, cz, new Color3(1, 0.88, 0.4), 8, 15);
-  }
-
-  // 河对岸
-  scatter('tree', 10, [-64, 64, 40, 72], [7, 11]);
-  scatter('bush', 16, [-64, 64, 38, 72], [2.4, 4], 'width');
-  scatter('grass', 40, [-64, 64, 38, 72], [1.2, 2], 'width');
-  scatter('pink_mound', 3, [-60, -20, 42, 70], [6, 9], 'width');
-  scatter('maneater', 3, [0, 50, 40, 66], [2.6, 3.2]);
-
-  // 靠近镜头的南侧
-  scatter('grass', 26, [-64, 64, -66, -26], [1.2, 2], 'width');
-  scatter('rock', 8, [-66, 66, -70, -28], [3, 5], 'width');
-  scatter('bush', 8, [-60, 60, -66, -28], [2.4, 3.6], 'width');
-
-  // 远景山峰
-  castShadows = false;
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2 + rnd() * 0.15;
-    const r = range(96, 110);
-    const x = Math.cos(a) * r;
-    const z = 5 + Math.sin(a) * r;
-    place('mountain', x, z, { height: range(40, 60), rotY: rnd() * Math.PI * 2 }, -4);
-  }
-  castShadows = true;
-
-  // 玩家
-  const player = place('robot', 30, -12, { height: 1.9, rotY: 0 });
-  const cam = new ArcRotateCamera('cam', -Math.PI / 2, 1.05, 16, new Vector3(30, 1, -12), scene);
-  cam.lowerRadiusLimit = 5;
-  cam.upperRadiusLimit = 32;
-  cam.lowerBetaLimit = 0.35;
-  cam.upperBetaLimit = 1.45;
-  cam.wheelPrecision = 30;
-  cam.panningSensibility = 0;
-  cam.minZ = 0.1;
-  cam.maxZ = 900;
-  const dbg = new URLSearchParams(location.search).get('cam');
-  const debugCam = !!dbg;
-  if (dbg) {
-    const [a, b, r, tx, ty, tz] = dbg.split(',').map(Number);
-    cam.alpha = a;
-    cam.beta = b;
-    cam.radius = r;
-    cam.target.set(tx, ty, tz);
-    cam.upperRadiusLimit = 400;
-    cam.lowerBetaLimit = 0.02;
-    cam.upperBetaLimit = 3;
-  }
-  cam.attachControl(canvas, true);
-  cam.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
+  scene.environmentIntensity = 0.45;
 
   const shadow = new CascadedShadowGenerator(2048, sun);
   shadow.numCascades = 3;
-  shadow.lambda = 0.75;
-  shadow.shadowMaxZ = 130;
+  shadow.lambda = 0.72;
+  shadow.shadowMaxZ = 170;
   shadow.autoCalcDepthBounds = true;
   shadow.usePercentageCloserFiltering = true;
   shadow.filteringQuality = 1;
   shadow.bias = 0.0008;
-  shadow.normalBias = 0.02;
+  shadow.normalBias = 0.025;
   shadow.stabilizeCascades = true;
-  shadow.darkness = 0.25;
-  for (const m of casters) shadow.addShadowCaster(m);
-  terrain.receiveShadows = true;
+  shadow.darkness = 0.32;
+  for (const m of meshes) {
+    const n = m.name;
+    const matName = m.material?.name ?? '';
+    if (
+      n === 'kelosi_terrain' ||
+      n.startsWith('m_bg') ||
+      n.includes('water') ||
+      matName.startsWith('bg_') ||
+      m.getTotalVertices() === 0
+    ) {
+      continue;
+    }
+    shadow.addShadowCaster(m);
+  }
 
+  // ------------------------------------------------------------ 玩家与相机
+  const refCam = arcFromReference(meta.referenceCamera);
+  const cam = new ArcRotateCamera('cam', refCam.alpha, refCam.beta, refCam.radius, refCam.target, scene);
+  cam.fovMode = Camera.FOVMODE_VERTICAL_FIXED;
+  cam.fov = meta.referenceCamera.fov;
+  cam.minZ = 0.08;
+  cam.maxZ = 900;
+  cam.panningSensibility = 0;
+  cam.wheelPrecision = 30;
+  cam.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
+
+  const debugCam = !!dbg;
+  if (dbg) {
+    const values = dbg.split(',').map(Number);
+    if (values.length === 6 && values.every(Number.isFinite)) {
+      const [a, b, r, tx, ty, tz] = values;
+      cam.alpha = a;
+      cam.beta = b;
+      cam.radius = r;
+      cam.target.set(tx, ty, tz);
+      cam.lowerBetaLimit = 0.02;
+      cam.upperBetaLimit = 3;
+      cam.lowerRadiusLimit = 1;
+      cam.upperRadiusLimit = 500;
+    }
+  }
+
+  let player: ReturnType<typeof spawn> | null = null;
+  if (!refMode) {
+    const sx = meta.spawn.x;
+    const sz = -meta.spawn.y;
+    const sy = groundAt(sx, sz);
+    player = spawn(scene, 'player/seer_robot', new Vector3(sx, sy, sz), {
+      height: 1.9,
+      rotY: meta.spawn.heading ?? Math.PI,
+    });
+    for (const m of player.meshes) shadow.addShadowCaster(m);
+
+    const companions = attachCompanions(scene, player.node, { playerHeight: 1.9, groundAt });
+    for (const m of companions.meshes) shadow.addShadowCaster(m);
+    createBackpack(companions);
+
+    if (!debugCam) {
+      cam.alpha = Math.PI / 2;
+      // 更低的机位让河对岸、台地和远山进入画面，扩大后的场景才显得开阔。
+      cam.beta = 1.30;
+      cam.radius = 13;
+      cam.target.set(sx, sy + 1.4, sz);
+      cam.attachControl(canvas, true);
+    }
+    cam.lowerRadiusLimit = 1;
+    cam.upperRadiusLimit = 500;
+    cam.lowerBetaLimit = 0.02;
+    cam.upperBetaLimit = 1.42;
+
+    // 角色补光：跟随相机一侧，避免深色机体在逆光下变成剪影。
+    const playerFill = new PointLight('playerFill', new Vector3(0, 8, 30), scene);
+    playerFill.diffuse = new Color3(1.0, 0.86, 0.70);
+    playerFill.intensity = 40.0;
+    playerFill.range = 13;
+
+    const movement = makeMovement(meta, groundAt);
+    const keys = new Set<string>();
+    addEventListener('keydown', (e) => keys.add(e.code));
+    addEventListener('keyup', (e) => keys.delete(e.code));
+    addEventListener('blur', () => keys.clear());
+
+    const pos = player.node.position;
+    let heading = meta.spawn.heading ?? Math.PI;
+    let hopT = 0;
+    const camTarget = new Vector3(pos.x, pos.y + 1.4, pos.z);
+
+    const attempt = (dx: number, dz: number) => {
+      const bx = pos.x;
+      const bz = pos.z;
+      const full = movement.move(pos, dx, dz);
+      if (full || Math.hypot(pos.x - bx, pos.z - bz) > Math.hypot(dx, dz) * 0.2) return;
+      const ax = pos.x;
+      const az = pos.z;
+      const xOnly = movement.move(pos, dx, 0);
+      if (xOnly || Math.hypot(pos.x - ax, pos.z - az) > 1e-5) return;
+      movement.move(pos, 0, dz);
+    };
+
+    scene.onBeforeRenderObservable.add(() => {
+      const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
+      let fx = 0;
+      let fz = 0;
+      if (keys.has('KeyW') || keys.has('ArrowUp')) fz += 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) fz -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) fx += 1;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) fx -= 1;
+      const moving = fx !== 0 || fz !== 0;
+
+      if (moving) {
+        const forward = cam.getTarget().subtract(cam.position);
+        forward.y = 0;
+        forward.normalize();
+        const right = new Vector3(forward.z, 0, -forward.x);
+        const dir = forward.scale(fz).add(right.scale(fx)).normalize();
+        const inWater = groundAt(pos.x, pos.z) < 0.22;
+        const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 11.5 : 6.3) * (inWater ? 0.62 : 1);
+        const step = speed * dt;
+        attempt(dir.x * step, dir.z * step);
+        const aim = Math.atan2(dir.x, dir.z);
+        const diff = Math.atan2(Math.sin(aim - heading), Math.cos(aim - heading));
+        heading += diff * Math.min(1, dt * 11);
+        hopT += dt * (keys.has('ShiftLeft') ? 17 : 12.5);
+      } else {
+        hopT = 0;
+      }
+
+      const ground = groundAt(pos.x, pos.z);
+      pos.y = ground + (moving ? Math.abs(Math.sin(hopT)) * 0.16 : 0);
+      player!.node.rotation.y = heading;
+      playerFill.position.set(
+        pos.x + (cam.position.x - pos.x) * 0.34,
+        pos.y + 2.8,
+        pos.z + (cam.position.z - pos.z) * 0.34,
+      );
+
+      if (!debugCam) {
+        camTarget.x += (pos.x - camTarget.x) * Math.min(1, dt * 8);
+        camTarget.y += (pos.y + 1.4 - camTarget.y) * Math.min(1, dt * 8);
+        camTarget.z += (pos.z - camTarget.z) * Math.min(1, dt * 8);
+        cam.target.copyFrom(camTarget);
+
+        const clear = (beta: number) => {
+          const sb = Math.sin(beta);
+          const cx = cam.target.x + cam.radius * Math.cos(cam.alpha) * sb;
+          const cz = cam.target.z + cam.radius * Math.sin(cam.alpha) * sb;
+          const cy = cam.target.y + cam.radius * Math.cos(beta);
+          return cy - (groundAt(cx, cz) + 1.35);
+        };
+        let b = cam.beta;
+        for (let i = 0; i < 40 && clear(b) < 0 && b > 0.22; i++) b -= 0.04;
+        cam.beta = b;
+      }
+    });
+  }
+
+  // ------------------------------------------------------------ 水面与地标动画
+  const ringNode = (scene.getTransformNodeByName('fx_teleport_ring') ??
+    scene.getMeshByName('fx_teleport_ring')) as TransformNode | null;
+  if (ringNode?.rotationQuaternion) ringNode.rotationQuaternion = null;
+
+  let t = 0;
+  scene.onBeforeRenderObservable.add(() => {
+    const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
+    t += dt;
+    if (water) {
+      water.setFloat('uTime', t);
+      water.setVector3('uCamPos', cam.position);
+    }
+    for (const p of pulsing) {
+      p.mat.emissiveIntensity = p.base * (1 + Math.sin(t * Math.PI * 2 * p.hz) * p.amount);
+    }
+    if (ringNode) ringNode.rotation.y += dt * 0.42;
+  });
+
+  // ------------------------------------------------------------ 后期
   const pipe = new DefaultRenderingPipeline('pipe', true, scene, [cam]);
   pipe.samples = 4;
   pipe.fxaaEnabled = true;
   pipe.bloomEnabled = true;
-  pipe.bloomThreshold = 0.75;
-  pipe.bloomWeight = 0.45;
+  pipe.bloomThreshold = 0.86;
+  pipe.bloomWeight = 0.32;
   pipe.bloomKernel = 64;
-  pipe.bloomScale = 0.6;
+  pipe.bloomScale = 0.55;
   pipe.sharpenEnabled = true;
-  pipe.sharpen.edgeAmount = 0.25;
+  pipe.sharpen.edgeAmount = 0.18;
   pipe.imageProcessingEnabled = true;
   pipe.imageProcessing.toneMappingEnabled = true;
   pipe.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-  pipe.imageProcessing.exposure = 1.1;
-  pipe.imageProcessing.contrast = 1.25;
-  pipe.imageProcessing.vignetteEnabled = true;
-  pipe.imageProcessing.vignetteWeight = 2.2;
-  pipe.imageProcessing.vignetteColor = new Color4(0.25, 0.05, 0.02, 0);
+  pipe.imageProcessing.exposure = 0.98;
+  pipe.imageProcessing.contrast = 1.12;
+  pipe.imageProcessing.vignetteEnabled = false;
 
   try {
-    const ssao = new SSAO2RenderingPipeline('ssao', scene, { ssaoRatio: 0.6, blurRatio: 1 }, [cam]);
-    ssao.radius = 2.5;
-    ssao.totalStrength = 0.9;
+    const ssao = new SSAO2RenderingPipeline('ssao', scene, { ssaoRatio: 0.5, blurRatio: 0.9 }, [cam]);
+    ssao.radius = 2.2;
+    ssao.totalStrength = 0.48;
     ssao.expensiveBlur = false;
-    ssao.samples = 12;
-    ssao.maxZ = 90;
+    ssao.samples = 10;
+    ssao.maxZ = 85;
   } catch {
     /* 不支持时跳过 */
   }
 
-  const keys = new Set<string>();
-  addEventListener('keydown', (e) => keys.add(e.code));
-  addEventListener('keyup', (e) => keys.delete(e.code));
-  addEventListener('blur', () => keys.clear());
+  hud.innerHTML =
+    '<span style="font-size:22px;font-weight:700;letter-spacing:2px">克洛斯星</span><br>' +
+    (refMode
+      ? '参考视角 · 固定机位 · 1280×720'
+      : '第三人称 · WASD/方向键移动 · Shift 加速 · B 精灵背包 · 拖动旋转视角 · 滚轮缩放');
+  const sw = document.createElement('a');
+  sw.className = 'invention-view-switch';
+  sw.href = refMode ? '?scene=kelosi' : '?scene=kelosi&ref=1';
+  sw.textContent = refMode ? '进入第三人称 →' : '参考视角';
+  document.body.append(sw);
 
-  const pos = player.node.position;
-  let heading = 0;
-  let hopT = 0;
-  const camTarget = new Vector3(pos.x, pos.y + 1.2, pos.z);
-
-  scene.onBeforeRenderObservable.add(() => {
-    const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
-    let fx = 0;
-    let fz = 0;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) fz += 1;
-    if (keys.has('KeyS') || keys.has('ArrowDown')) fz -= 1;
-    if (keys.has('KeyD') || keys.has('ArrowRight')) fx += 1;
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) fx -= 1;
-    const moving = fx !== 0 || fz !== 0;
-
-    if (moving) {
-      const forward = cam.getTarget().subtract(cam.position);
-      forward.y = 0;
-      forward.normalize();
-      const right = new Vector3(forward.z, 0, -forward.x);
-      const dir = forward.scale(fz).add(right.scale(fx)).normalize();
-      const inWater = Math.abs(pos.z - riverCenter(pos.x)) < 4;
-      const speed = (keys.has('ShiftLeft') ? 22 : 12) * (inWater ? 0.6 : 1);
-      const step = speed * dt;
-      const tryMove = (dx: number, dz: number) => {
-        const nx = pos.x + dx;
-        const nz = pos.z + dz;
-        if (Math.hypot(nx, nz - 5) > 84) return false;
-        const dh = heightAt(nx, nz) - heightAt(pos.x, pos.z);
-        if (dh / step > 1.6) return false;
-        pos.x = nx;
-        pos.z = nz;
-        return true;
-      };
-      if (!tryMove(dir.x * step, dir.z * step)) {
-        if (!tryMove(dir.x * step, 0)) tryMove(0, dir.z * step);
-      }
-      const target = Math.atan2(dir.x, dir.z);
-      let diff = target - heading;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      heading += diff * Math.min(1, dt * 12);
-      hopT += dt * (keys.has('ShiftLeft') ? 19 : 14);
-    } else {
-      hopT = 0;
-    }
-    const ground = heightAt(pos.x, pos.z);
-    const hop = moving ? Math.abs(Math.sin(hopT)) * 0.35 : 0;
-    pos.y = ground + hop;
-    player.node.rotation.y = heading;
-
-    if (!debugCam) {
-      camTarget.x += (pos.x - camTarget.x) * Math.min(1, dt * 8);
-      camTarget.y += (pos.y + 1.2 - camTarget.y) * Math.min(1, dt * 8);
-      camTarget.z += (pos.z - camTarget.z) * Math.min(1, dt * 8);
-      cam.target.copyFrom(camTarget);
-    }
-
-    if (!debugCam) {
-      const clear = (beta: number) => {
-        const sb = Math.sin(beta);
-        const cx = cam.target.x + cam.radius * Math.cos(cam.alpha) * sb;
-        const cz = cam.target.z + cam.radius * Math.sin(cam.alpha) * sb;
-        const cy = cam.target.y + cam.radius * Math.cos(beta);
-        return cy - (heightAt(cx, cz) + 1.4);
-      };
-      let b = cam.beta;
-      for (let i = 0; i < 40 && clear(b) < 0 && b > 0.2; i++) b -= 0.04;
-      cam.beta = b;
-    }
-
-    const t = performance.now() * 0.003;
-    glowLights.forEach((l, i) => (l.intensity = glowBase[i] * (0.88 + Math.sin(t + i) * 0.12)));
-  });
-
-  setStatus('克洛斯星 · WASD/方向键移动 · Shift 加速 · 拖动旋转视角 · 滚轮缩放');
+  (window as unknown as { __kelosi?: unknown }).__kelosi = {
+    ready: true,
+    mode: refMode ? 'ref' : 'thirdperson',
+    meta,
+    groundAt,
+    player: player?.node ?? null,
+    camera: cam,
+  };
+  (window as unknown as { __scene: Scene }).__scene = scene;
   engine.runRenderLoop(() => scene.render());
   addEventListener('resize', () => engine.resize());
-  (window as unknown as { __scene: Scene }).__scene = scene;
 }
 
 main().catch((e) => {
   console.error(e);
-  setStatus(`加载失败: ${e?.message ?? e}`);
+  hud.textContent = `加载失败: ${e?.message ?? e}`;
 });
 
 export {};

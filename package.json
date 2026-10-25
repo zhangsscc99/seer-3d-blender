@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "assets": "node scripts/build-assets.mjs"
+    "assets": "node scripts/build-assets.mjs",
+    "lookout:ref": "node scripts/lookout_ref_report.mjs",
+    "lookout:ref:images": "node scripts/lookout_ref_report.mjs --report-only",
+    "lookout:ref:selftest": "node scripts/lookout_ref_report.mjs --self-test"
   },
   "dependencies": {
     "@babylonjs/core": "^9.27.1",
@@ -19,6 +22,7 @@
     "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
     "meshoptimizer": "^1.3.0",
+    "playwright": "^1.64.1",
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"
